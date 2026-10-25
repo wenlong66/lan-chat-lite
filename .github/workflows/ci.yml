@@ -137,7 +137,7 @@ jobs:
           env = os.environ.copy()
           for key in ('QT_PLUGIN_PATH', 'QML2_IMPORT_PATH', 'QT_QPA_PLATFORM', 'QTDIR', 'QT_ROOT_DIR'):
               env.pop(key, None)
-          system = Path(env['SystemRoot'])
+          system = Path(env['SYSTEMROOT'])
           env['PATH'] = os.pathsep.join(map(str, (runtime, system / 'System32', system)))
           subprocess.run([str(runtime / 'lmc.exe'), '/loopback', '/noconfig', '/quit'],
                          cwd=runtime, env=env, check=True, timeout=30)
@@ -215,7 +215,7 @@ jobs:
           export QTDIR="$QT_ROOT_DIR"
           cd lmc/setup/mac
           bash ./stage-mac-app
-          lipo -verify_arch ${{ matrix.arch }} LAN-Messenger.app/Contents/MacOS/LAN-Messenger
+          lipo LAN-Messenger.app/Contents/MacOS/LAN-Messenger -verify_arch ${{ matrix.arch }}
           codesign --verify --deep --strict LAN-Messenger.app
       - name: Smoke test packaged app
         run: |
