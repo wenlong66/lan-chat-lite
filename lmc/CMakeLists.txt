@@ -117,6 +117,9 @@ target_compile_definitions(lmc_core PUBLIC
     QT_DISABLE_DEPRECATED_BEFORE=0x060000
     "IDA_VERSION=\"${LMC_VERSION}\""
 )
+if(LMC_LITE_BUILD)
+    target_compile_definitions(lmc_core PUBLIC LMC_LITE_BUILD=1)
+endif()
 
 # AUTOUIC puts ui_*.h in <AUTOGEN_BUILD_DIR>/include with single-config
 # generators and in <AUTOGEN_BUILD_DIR>/include_<CONFIG> with multi-config
@@ -202,7 +205,7 @@ elseif(APPLE)
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_ICON_FILE lmc.icns
         MACOSX_BUNDLE_BUNDLE_NAME "LAN-Messenger"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.lanmessenger.lmc"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.wenlong66.lanchatlite"
         MACOSX_BUNDLE_BUNDLE_VERSION "${LMC_MACOS_BUNDLE_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${LMC_MACOS_SHORT_VERSION}"
     )

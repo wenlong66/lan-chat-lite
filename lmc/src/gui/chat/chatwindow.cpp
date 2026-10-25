@@ -25,10 +25,29 @@
 #include <QDesktopServices>
 #include <QTimer>
 #include <QMimeData>
+#include <QMessageBox>
+#include <QTemporaryDir>
 #include "chatwindow.h"
 #include "gui/widgets/actionhelper.h"
+#include "gui/widgets/clipboardimage.h"
 
 const qint64 pauseTime = 5000;
+
+namespace {
+// Application-session lifetime: closing a conversation must not remove a PNG
+// while the peer is still accepting/downloading it. Normal completion removes
+// files earlier; the directory removes any leftovers at orderly app exit.
+QTemporaryDir& clipboardAttachmentDirectory() {
+  static QTemporaryDir directory(QDir::tempPath() + QStringLiteral("/lanchat-lite-clipboard-XXXXXX"));
+  return directory;
+}
+
+bool isClipboardAttachment(const QString& path) {
+  return !path.isEmpty() && clipboardAttachmentDirectory().isValid() &&
+         QFileInfo(path).absolutePath() == clipboardAttachmentDirectory().path() &&
+         QFileInfo(path).fileName().startsWith(QStringLiteral("Screenshot-"));
+}
+}
 
 lmcChatWindow::lmcChatWindow(QWidget* parent, Qt::WindowFlags flags)
     : QWidget(parent, flags) {
@@ -57,6 +76,8 @@ lmcChatWindow::lmcChatWindow(QWidget* parent, Qt::WindowFlags flags)
   ui.txtMessage->installEventFilter(this);
   ui.btnSend->installEventFilter(this);
   connect(ui.btnSend, &QAbstractButton::clicked, this, &lmcChatWindow::btnSend_clicked);
+  connect(ui.txtMessage, &lmcMessageEdit::imagePasted, this, &lmcChatWindow::pasteImage);
+  connect(ui.txtMessage, &lmcMessageEdit::imagePasteRejected, this, &lmcChatWindow::imagePasteRejected);
   infoFlag = IT_Ok;
 
   localId = QString();
@@ -223,6 +244,9 @@ void lmcChatWindow::receiveMessage(MessageType type, QString* lpszUserId, XmlMes
   case MT_File:
   case MT_Folder:
     if(pMessage->data(XN_FILEOP) == FileOpNames[FO_Request]) {
+      const QString filePath = pMessage->data(XN_FILEPATH);
+      if(pMessage->data(XN_MODE) == FileModeNames[FM_Send] && isClipboardAttachment(filePath))
+        clipboardTransfers.insert(pMessage->data(XN_FILEID), filePath);
       //	a file request has been received
       appendMessageLog(type, lpszUserId, &senderName, pMessage);
       if(pMessage->data(XN_MODE) == FileModeNames[FM_Receive] && (isHidden() || !isActiveWindow())) {
@@ -451,6 +475,73 @@ void lmcChatWindow::btnTransfers_clicked(void) {
   emit showTransfers();
 }
 
+void lmcChatWindow::imagePasteRejected(void) {
+  QMessageBox::information(this, tr("Image too large"),
+    tr("Clipboard images must be at most 16 megapixels and 64 MiB when decoded. "
+       "Save larger images to a file and use Send File instead."));
+}
+
+void lmcChatWindow::pasteImage(const QImage& image) {
+  if(!ClipboardImage::isWithinLimits(image)) {
+    imagePasteRejected();
+    return;
+  }
+  if(groupMode || !bConnected || (infoFlag & IT_Offline) ||
+     (peerCaps.value(peerId) & UC_File) != UC_File) {
+    QMessageBox::information(this, tr("Cannot send image"),
+      tr("Open a one-to-one conversation with an online device that supports file transfers."));
+    return;
+  }
+
+  QMessageBox confirmation(QMessageBox::NoIcon, tr("Send image?"),
+    tr("Send this %1 x %2 image to %3?")
+      .arg(image.width()).arg(image.height()).arg(peerNames.value(peerId)),
+    QMessageBox::Ok | QMessageBox::Cancel, this);
+  confirmation.setTextFormat(Qt::PlainText);
+  confirmation.setInformativeText(tr("The image will be sent as a PNG attachment. "
+                                    "The other device can accept or decline it."));
+  confirmation.setIconPixmap(QPixmap::fromImage(image.scaled(360, 220, Qt::KeepAspectRatio,
+                                                            Qt::SmoothTransformation)));
+  confirmation.button(QMessageBox::Ok)->setText(tr("Send image"));
+  confirmation.setDefaultButton(QMessageBox::Cancel);
+  if(confirmation.exec() != QMessageBox::Ok)
+    return;
+
+  // The modal preview processes events: the peer may have gone away meanwhile.
+  if(!bConnected || (infoFlag & IT_Offline)) {
+    QMessageBox::information(this, tr("Cannot send image"), tr("The other device is now offline."));
+    return;
+  }
+
+  QTemporaryDir& directory = clipboardAttachmentDirectory();
+  if(!directory.isValid()) {
+    QMessageBox::warning(this, tr("Cannot prepare image"),
+                         tr("The temporary image folder is unavailable."));
+    return;
+  }
+  const QFileInfoList pending = QDir(directory.path()).entryInfoList(QDir::Files);
+  qint64 pendingBytes = 0;
+  for(const QFileInfo& file : pending)
+    pendingBytes += file.size();
+  // Bound disk staging as well as decoded image memory. A closed conversation
+  // may retain its in-flight file until app exit, rather than break a transfer.
+  if(pending.size() >= 64 ||
+     pendingBytes + image.sizeInBytes() + 1024 * 1024 > 256 * 1024 * 1024) {
+    QMessageBox::warning(this, tr("Cannot prepare image"),
+      tr("The temporary image folder is unavailable or full. Finish current image transfers, "
+         "or save the image and use Send File."));
+    return;
+  }
+
+  QString error;
+  QString path = ClipboardImage::savePng(image, directory.path(), &error);
+  if(path.isEmpty()) {
+    QMessageBox::warning(this, tr("Cannot prepare image"), error);
+    return;
+  }
+  sendFile(&path);
+}
+
 void lmcChatWindow::btnSend_clicked(void) {
   sendMessage();
   setChatState(CS_Active);
@@ -508,7 +599,7 @@ void lmcChatWindow::createToolBar(void) {
   pbtnSmiley->setIcon(QIcon(QPixmap(IDR_SMILEY, "PNG")));
   pbtnSmiley->setPopupMode(QToolButton::InstantPopup);
   pbtnSmiley->setMenu(pSmileyMenu);
-  pLeftBar->addWidget(pbtnSmiley);
+  QAction* smileyWidgetAction = pLeftBar->addWidget(pbtnSmiley);
 
   pLeftBar->addSeparator();
 
@@ -545,6 +636,20 @@ void lmcChatWindow::createToolBar(void) {
   ui.lblDividerTop->setAutoFillBackground(true);
   ui.lblDividerBottom->setBackgroundRole(QPalette::Dark);
   ui.lblDividerBottom->setAutoFillBackground(true);
+
+#ifdef LMC_LITE_BUILD
+  // Keep the conversation toolbar focused on file transfer and history. The
+  // actions still exist so language changes and upstream code remain valid.
+  pFontAction->setVisible(false);
+  pFontColorAction->setVisible(false);
+  smileyWidgetAction->setVisible(false);
+  pSaveAction->setVisible(false);
+  for(QAction* action : pLeftBar->actions()) {
+    if(action->isSeparator())
+      action->setVisible(false);
+  }
+#endif
+  Q_UNUSED(smileyWidgetAction);
 }
 
 void lmcChatWindow::setUIText(void) {
@@ -570,6 +675,7 @@ void lmcChatWindow::setUIText(void) {
   pTransferAction->setToolTip(tr("View File Transfers"));
   ui.btnSend->setText(tr("Send"));
   ui.btnSend->setToolTip(tr("Send message"));
+  ui.txtMessage->setPlaceholderText(tr("Type a message, or paste an image..."));
   pFontAction->setText(tr("Change Font..."));
   pFontAction->setToolTip(tr("Change message font"));
   pFontColorAction->setText(tr("Change Color..."));
@@ -649,6 +755,14 @@ void lmcChatWindow::processFileOp(XmlMessage* pMessage) {
   int fileOp = Helper::indexOf(FileOpNames, FO_Max, pMessage->data(XN_FILEOP));
   int fileMode = Helper::indexOf(FileModeNames, FM_Max, pMessage->data(XN_MODE));
   QString fileId = pMessage->data(XN_FILEID);
+
+  if(fileMode == FM_Send && fileOp != FO_Accept &&
+     (fileOp == FO_Complete || fileOp == FO_Decline || fileOp == FO_Cancel ||
+      fileOp == FO_Abort || fileOp == FO_Error)) {
+    const QString imagePath = clipboardTransfers.take(fileId);
+    if(isClipboardAttachment(imagePath))
+      QFile::remove(imagePath);
+  }
 
   switch(fileOp) {
   case FO_Cancel:

@@ -32,6 +32,8 @@
 #include <QToolButton>
 #include <QLabel>
 #include <QLineEdit>
+#include <QTextEdit>
+#include <QImage>
 #include "core/uidefinitions.h"
 
 class lmcToolButton : public QToolButton {
@@ -72,6 +74,23 @@ signals:
 protected:
   void focusInEvent(QFocusEvent* event);
   void focusOutEvent(QFocusEvent* event);
+};
+
+// Both the standard Paste shortcut and the context-menu Paste action use this
+// virtual hook, so image pastes cannot silently become a blank text message.
+class lmcMessageEdit : public QTextEdit {
+  Q_OBJECT
+
+public:
+  explicit lmcMessageEdit(QWidget* parent = nullptr);
+
+signals:
+  void imagePasted(const QImage& image);
+  void imagePasteRejected(void);
+
+protected:
+  bool canInsertFromMimeData(const QMimeData* source) const override;
+  void insertFromMimeData(const QMimeData* source) override;
 };
 
 #endif //SUBCONTROLS_H

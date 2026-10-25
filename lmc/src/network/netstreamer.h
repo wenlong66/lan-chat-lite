@@ -1,4 +1,4 @@
-﻿/****************************************************************************
+/****************************************************************************
 **
 ** This file is part of LAN Messenger.
 ** 
@@ -29,6 +29,12 @@
 #include <QTcpServer>
 #include <QTimer>
 #include <QFile>
+#include <QSaveFile>
+#include <QPointer>
+#include <QElapsedTimer>
+#include <QCryptographicHash>
+#include <array>
+#include <memory>
 #include "core/shared.h"
 
 /****************************************************************************
@@ -41,7 +47,7 @@ class FileSender : public QObject {
 public:
   FileSender(void);
   FileSender(QString szId, QString szLocalId, QString szPeerId, QString szFilePath, QString szFileName, qint64 nFileSize,
-             QString szAddress, int nPort, FileType nType);
+             QString szAddress, int nPort, FileType nType, int idleTimeoutMs = 30000);
   ~FileSender(void);
 
   void init(void);
@@ -49,7 +55,7 @@ public:
 
   QString id;
   QString peerId;
-  FileType type;
+  FileType type = FT_None;
 
 signals:
   void progressUpdated(FileMode mode, FileOp fileOp, FileType type, QString* lpszId, QString* lpszUserId, QString* lpszData);
@@ -63,22 +69,31 @@ private slots:
 
 private:
   void sendFile(void);
+  void pump(void);
+  void fail(const QString& reason);
+  void complete(void);
+  bool terminal(void) const;
+  enum class State { Idle, WaitingForStart, Sending, WaitingForReceipt, Complete, Failed, Stopped };
 
   QString localId;
   QString filePath;
   QString fileName;
-  qint64 fileSize;
+  qint64 fileSize = 0;
   QString address;
-  int port;
-  qint64 sentBytes;
-  QTcpSocket* socket;
-  QFile* file;
-  char* buffer;
-  bool active = false;
-  bool finishing = false;
-  qint64 milestone;
-  qint64 mile;
-  QTimer* timer;
+  int port = 0;
+  QPointer<QTcpSocket> socket;
+  QFile file;
+  std::array<char, 65536> buffer{};
+  qint64 bufferLength = 0;
+  qint64 bufferOffset = 0;
+  qint64 queuedFileBytes = 0;
+  QByteArray control;
+  QCryptographicHash hash{QCryptographicHash::Sha256};
+  State state = State::Idle;
+  QTimer timer;
+  QElapsedTimer idleTimer;
+  int idleTimeoutMs = 30000;
+
 };
 
 /****************************************************************************
@@ -91,7 +106,7 @@ class FileReceiver : public QObject {
 public:
   FileReceiver(void);
   FileReceiver(QString szId, QString szPeerId, QString szFilePath, QString szFileName, qint64 nFileSize,
-               QString szAddress, int nPort, FileType nType);
+               QString szAddress, int nPort, FileType nType, int idleTimeoutMs = 30000);
   ~FileReceiver(void);
 
   void init(QTcpSocket* socket);
@@ -99,7 +114,7 @@ public:
 
   QString id;
   QString peerId;
-  FileType type;
+  FileType type = FT_None;
 
 signals:
   void progressUpdated(FileMode mode, FileOp fileOp, FileType type, QString* lpszId, QString* lpszUserId, QString* lpszData);
@@ -110,23 +125,28 @@ private slots:
   void timer_timeout(void);
 
 private:
-  void receiveFile(void);
+  bool receiveFile(void);
+  void finish(void);
+  void fail(const QString& reason);
+  bool terminal(void) const;
+  enum class State { Idle, Receiving, Complete, Failed, Stopped };
 
   QString filePath;
   QString fileName;
-  qint64 fileSize;
+  qint64 fileSize = 0;
   QString address;
-  int port;
-  qint64 sentBytes;
-  QTcpSocket* socket;
-  QFile* file;
-  char* buffer;
-  bool active = false;
-  qint64 milestone;
-  qint64 mile;
-  QTimer* timer;
-  int numTimeOuts;
-  qint64 lastPosition;
+  int port = 0;
+  QPointer<QTcpSocket> socket;
+  std::unique_ptr<QSaveFile> file;
+  std::array<char, 65536> buffer{};
+  qint64 receivedBytes = 0;
+  QCryptographicHash hash{QCryptographicHash::Sha256};
+  State state = State::Idle;
+  QTimer timer;
+  QElapsedTimer idleTimer;
+  int idleTimeoutMs = 30000;
+  bool readScheduled = false;
+
 };
 
 /****************************************************************************
@@ -157,16 +177,16 @@ private slots:
   void bytesWritten(qint64 bytes);
 
 private:
-  QTcpSocket* socket;
+  QPointer<QTcpSocket> socket;
   int port;
   QString localId;
   QString peerId;
   QString peerAddress;
   QByteArray outData;
   QByteArray inData;
-  quint32 outDataLen;
-  quint32 inDataLen;
-  bool reading;
+  qint64 outDataLen = 0;
+  quint32 inDataLen = 0;
+  bool reading = false;
 };
 
 #endif // NETSTREAMER_H

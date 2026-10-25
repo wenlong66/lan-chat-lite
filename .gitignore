@@ -21,6 +21,12 @@ ui_*.h
 Makefile*
 *build-*/
 build/
+build-*/
+/artifacts/
+/test-results/
+/dist/
+*.user
+*.log
 moc_predefs.h
 
 # QtCreator

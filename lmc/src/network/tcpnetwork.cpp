@@ -22,6 +22,7 @@
 ****************************************************************************/
 
 
+#include <QVariant>
 #include "core/trace.h"
 #include "tcpnetwork.h"
 #include "datagram.h"
@@ -59,15 +60,32 @@ void lmcTcpNetwork::start(void) {
 
 void lmcTcpNetwork::stop(void) {
   server->close();
-  // Close all open sockets
-  if(locMsgStream)
-    locMsgStream->stop();
-  QMap<QString, MsgStream*>::const_iterator index = messageMap.constBegin();
-  while(index != messageMap.constEnd()) {
-    MsgStream* pMsgStream = index.value();
-    if(pMsgStream)
-      pMsgStream->stop();
-    index++;
+  const auto senders = sendList;
+  sendList.clear();
+  for(FileSender* transfer : senders) {
+    transfer->stop();
+    transfer->deleteLater();
+  }
+  const auto receivers = receiveList;
+  receiveList.clear();
+  for(FileReceiver* transfer : receivers) {
+    transfer->stop();
+    transfer->deleteLater();
+  }
+  // Detach the maps before closing sockets: disconnected() may otherwise
+  // modify them synchronously while shutdown is iterating. Include older
+  // live streams superseded by a simultaneous incoming connection.
+  const auto streams = findChildren<MsgStream*>(QString(), Qt::FindDirectChildrenOnly);
+  messageMap.clear();
+  locMsgStream = nullptr;
+  for(MsgStream* stream : streams) {
+    disconnect(stream, nullptr, this, nullptr);
+    stream->stop();
+    stream->deleteLater();
+  }
+  for(QTcpSocket* socket : server->findChildren<QTcpSocket*>(QString(), Qt::FindDirectChildrenOnly)) {
+    socket->abort();
+    socket->deleteLater();
   }
   isRunning = false;
 }
@@ -90,10 +108,11 @@ void lmcTcpNetwork::addConnection(QString* lpszUserId, QString* lpszAddress, int
   lmcTrace::write("Connecting to user " + *lpszUserId + " at " + *lpszAddress + ":" + QString::number(peerPort));
 
   MsgStream* msgStream = new MsgStream(localId, *lpszUserId, *lpszAddress, peerPort);
+  msgStream->setParent(this);
   connect(msgStream, &MsgStream::connectionLost, this, &lmcTcpNetwork::msgStream_connectionLost);
   connect(msgStream, &MsgStream::messageReceived, this, &lmcTcpNetwork::receiveMessage);
 
-  //	if connecting to own machine, this stream will be stored in local message stream, else in list
+  // Preserve the upstream simultaneous incoming/outgoing session behavior.
   if(lpszUserId->compare(localId) == 0)
     locMsgStream = msgStream;
   else
@@ -152,6 +171,7 @@ void lmcTcpNetwork::initSendFile(QString* lpszReceiverId, QString* lpszAddress, 
 
   FileSender* sender = new FileSender(xmlMessage.data(XN_FILEID), localId, *lpszReceiverId, xmlMessage.data(XN_FILEPATH),
                                       xmlMessage.data(XN_FILENAME), xmlMessage.data(XN_FILESIZE).toLongLong(), *lpszAddress, peerPort, (FileType)type);
+  sender->setParent(this);
   connect(sender, &FileSender::progressUpdated, this, &lmcTcpNetwork::update);
   sendList.prepend(sender);
   sender->init();
@@ -163,6 +183,7 @@ void lmcTcpNetwork::initReceiveFile(QString* lpszSenderId, QString* lpszAddress,
 
   FileReceiver* receiver = new FileReceiver(xmlMessage.data(XN_FILEID), *lpszSenderId, xmlMessage.data(XN_FILEPATH),
                                             xmlMessage.data(XN_FILENAME), xmlMessage.data(XN_FILESIZE).toLongLong(), *lpszAddress, tcpPort, (FileType)type);
+  receiver->setParent(this);
   connect(receiver, &FileReceiver::progressUpdated, this, &lmcTcpNetwork::update);
   receiveList.prepend(receiver);
 }
@@ -217,30 +238,90 @@ int lmcTcpNetwork::serverPort(void) const {
 }
 
 void lmcTcpNetwork::server_newConnection(void) {
-  lmcTrace::write("New connection received");
-  QTcpSocket* socket = server->nextPendingConnection();
-  connect(socket, &QIODevice::readyRead, this, &lmcTcpNetwork::socket_readyRead);
-}
-
-void lmcTcpNetwork::socket_readyRead(void) {
-  QTcpSocket* socket = (QTcpSocket*)sender();
-  disconnect(socket, &QIODevice::readyRead, this, &lmcTcpNetwork::socket_readyRead);
-
-  QByteArray buffer = socket->read(64);
-  if(buffer.startsWith("MSG")) {
-    //	read user id from socket and assign socket to correct message stream
-    QString userId(buffer.mid(3)); // 3 is length of "MSG"
-    addMsgSocket(&userId, socket);
-  } else if(buffer.startsWith("FILE")) {
-    //	read transfer id from socket and assign socket to correct file receiver
-    QString id(buffer.mid(4, 32)); // 4 is length of "FILE", 32 is length of File Id
-    QString userId(buffer.mid(36));
-    addFileSocket(&id, &userId, socket);
+  while(server->hasPendingConnections()) {
+    QTcpSocket* socket = server->nextPendingConnection();
+    // Bound unclassified connections, including peers sending no header.
+    socket->setReadBufferSize(1024);
+    connect(socket, &QIODevice::readyRead, this, &lmcTcpNetwork::socket_readyRead);
+    connect(socket, &QAbstractSocket::disconnected, socket, [socket] {
+      if(!socket->property("lclClaimed").toBool())
+        socket->deleteLater();
+    });
+    QTimer::singleShot(30000, socket, [socket] {
+      if(!socket->property("lclClaimed").toBool()) {
+        socket->abort();
+        socket->deleteLater();
+      }
+    });
   }
 }
 
+void lmcTcpNetwork::socket_readyRead(void) {
+  QTcpSocket* socket = qobject_cast<QTcpSocket*>(sender());
+  if(!socket || socket->bytesAvailable() < 3)
+    return;
+
+  const QByteArray pending = socket->peek(1024);
+  if(pending.startsWith("MSG")) {
+    // Preserve the upstream text-session handshake. File headers below
+    // have an independently known peer ID and can be framed exactly.
+    disconnect(socket, &QIODevice::readyRead, this, &lmcTcpNetwork::socket_readyRead);
+    QByteArray header = socket->read(64);
+    socket->setProperty("lclClaimed", true);
+    socket->setReadBufferSize(0);
+    QString userId = QString::fromLocal8Bit(header.mid(3));
+    addMsgSocket(&userId, socket);
+    return;
+  }
+  if(pending.size() < 4)
+    return;
+  if(pending.startsWith("FILE")) {
+    if(pending.size() < 36)
+      return;
+    const QString id = QString::fromLatin1(pending.mid(4, 32));
+    bool partialMatch = false;
+    for(FileReceiver* receiver : receiveList) {
+      if(receiver->id != id)
+        continue;
+      const QByteArray expected = QByteArrayLiteral("FILE") + id.toLatin1() + receiver->peerId.toUtf8();
+      if(expected.size() > 1024)
+        continue;
+      if(pending.size() >= expected.size() && pending.startsWith(expected)) {
+        socket->read(expected.size());
+        disconnect(socket, &QIODevice::readyRead, this, &lmcTcpNetwork::socket_readyRead);
+        socket->setProperty("lclClaimed", true);
+        receiver->init(socket);
+        return;
+      }
+      if(expected.startsWith(pending))
+        partialMatch = true;
+    }
+    if(partialMatch)
+      return;
+  }
+  // No matching accepted transfer: do not keep orphan sockets alive.
+  socket->abort();
+  socket->deleteLater();
+}
+
 void lmcTcpNetwork::msgStream_connectionLost(QString* lpszUserId) {
-  emit connectionLost(lpszUserId);
+  MsgStream* stream = qobject_cast<MsgStream*>(sender());
+  const QString userId = *lpszUserId;
+  bool current = false;
+  if(locMsgStream == stream) {
+    locMsgStream = nullptr;
+    current = true;
+  }
+  if(messageMap.value(userId, nullptr) == stream) {
+    messageMap.remove(userId);
+    current = true;
+  }
+  if(stream)
+    stream->deleteLater();
+  if(current) {
+    QString copy = userId;
+    emit connectionLost(&copy);
+  }
 }
 
 void lmcTcpNetwork::update(FileMode mode, FileOp op, FileType type, QString* lpszId, QString* lpszUserId, QString* lpszData) {
@@ -315,12 +396,17 @@ void lmcTcpNetwork::addFileSocket(QString* lpszId, QString* lpszUserId, QTcpSock
   FileReceiver* receiver = getReceiver(*lpszId, *lpszUserId);
   if(receiver)
     receiver->init(pSocket);
+  else {
+    pSocket->abort();
+    pSocket->deleteLater();
+  }
 }
 
 void lmcTcpNetwork::addMsgSocket(QString* lpszUserId, QTcpSocket* pSocket) {
   lmcTrace::write("Accepted connection from user " + *lpszUserId);
   QString address = pSocket->peerAddress().toString();
   MsgStream* msgStream = new MsgStream(localId, *lpszUserId, address, tcpPort);
+  msgStream->setParent(this);
   connect(msgStream, &MsgStream::connectionLost, this, &lmcTcpNetwork::msgStream_connectionLost);
   connect(msgStream, &MsgStream::messageReceived, this, &lmcTcpNetwork::receiveMessage);
   messageMap.insert(*lpszUserId, msgStream);
@@ -377,12 +463,16 @@ FileReceiver* lmcTcpNetwork::getReceiver(QString id, QString userId) {
 
 void lmcTcpNetwork::removeSender(FileSender* pSender) {
   int index = sendList.indexOf(pSender);
+  if(index < 0)
+    return;
   FileSender* sender = sendList.takeAt(index);
   sender->deleteLater(); // deleting later is generally safer
 }
 
 void lmcTcpNetwork::removeReceiver(FileReceiver* pReceiver) {
   int index = receiveList.indexOf(pReceiver);
+  if(index < 0)
+    return;
   FileReceiver* receiver = receiveList.takeAt(index);
   receiver->deleteLater(); // deleting later is generally safer
 }

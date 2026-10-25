@@ -92,6 +92,8 @@ private slots:
   void smileyAction_triggered(void);
   void log_sendMessage(MessageType type, QString* lpszUserId, XmlMessage* pMessage);
   void checkChatState(void);
+  void pasteImage(const QImage& image);
+  void imagePasteRejected(void);
 
 private:
   void createSmileyMenu(void);
@@ -145,6 +147,7 @@ private:
   qint64 keyStroke;
   qint64 snapKeyStroke;
   bool dataSaved;
+  QHash<QString, QString> clipboardTransfers;
 };
 
 #endif // CHATWINDOW_H

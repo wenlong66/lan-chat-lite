@@ -23,8 +23,10 @@
 
 
 #include <QApplication>
+#include <QMimeData>
 #include "core/lmcstrings.h"
 #include "subcontrols.h"
+#include "clipboardimage.h"
 
 lmcToolButton::lmcToolButton(QWidget* parent)
     : QToolButton(parent) {
@@ -93,4 +95,28 @@ void lmcLineEdit::focusOutEvent(QFocusEvent* event) {
   setPalette(p);
 
   emit lostFocus();
+}
+
+lmcMessageEdit::lmcMessageEdit(QWidget* parent) : QTextEdit(parent) {
+}
+
+bool lmcMessageEdit::canInsertFromMimeData(const QMimeData* source) const {
+  return source && (source->hasImage() || QTextEdit::canInsertFromMimeData(source));
+}
+
+void lmcMessageEdit::insertFromMimeData(const QMimeData* source) {
+  if(!source)
+    return;
+  if(!source->hasImage()) {
+    QTextEdit::insertFromMimeData(source);
+    return;
+  }
+
+  // QImage is implicitly shared. Do not convert or scale the original before
+  // checking the limits, and never keep it as a QTextDocument image resource.
+  const QImage image = qvariant_cast<QImage>(source->imageData());
+  if(ClipboardImage::isWithinLimits(image))
+    emit imagePasted(image);
+  else
+    emit imagePasteRejected();
 }

@@ -1,4 +1,4 @@
-﻿/****************************************************************************
+/****************************************************************************
 **
 ** This file is part of LAN Messenger.
 ** 
@@ -28,17 +28,27 @@
 #include "core/trace.h"
 #include "netstreamer.h"
 
-const qint64 bufferSize = 65535;
+namespace {
+// Per transfer, Qt's userspace network queue is capped at 512 KiB. The
+// filesystem chunk is 64 KiB, independent of the advertised file size.
+constexpr qint64 kQueueLimit = 512 * 1024;
+constexpr qint64 kReadBudget = 1024 * 1024;
+constexpr qsizetype kControlLimit = 128;
+constexpr quint32 kMessageLimit = 1024 * 1024;
+constexpr int kHandshakeTimeoutMs = 5000;
+const QByteArray kStart = QByteArrayLiteral("START2\n");
+const QByteArray kDonePrefix = QByteArrayLiteral("DONE2 ");
+}
 
 /****************************************************************************
 ** Class: FileSender
-** Description: Handles sending files.
+** Description: Bounded streaming sender, with receiver-confirmed completion.
 ****************************************************************************/
-FileSender::FileSender(void) {
-}
+FileSender::FileSender(void) = default;
 
 FileSender::FileSender(QString szId, QString szLocalId, QString szPeerId, QString szFilePath,
-                       QString szFileName, qint64 nFileSize, QString szAddress, int nPort, FileType nType) {
+                       QString szFileName, qint64 nFileSize, QString szAddress, int nPort,
+                       FileType nType, int timeoutMs) {
   id = szId;
   localId = szLocalId;
   peerId = szPeerId;
@@ -47,146 +57,212 @@ FileSender::FileSender(QString szId, QString szLocalId, QString szPeerId, QStrin
   fileSize = nFileSize;
   address = szAddress;
   port = nPort;
-  active = false;
-  finishing = false;
-  mile = fileSize / 36;
-  milestone = mile;
-  file = NULL;
-  socket = NULL;
-  timer = NULL;
   type = nType;
+  idleTimeoutMs = qMax(1, timeoutMs);
 }
 
 FileSender::~FileSender(void) {
+  stop();
+}
+
+bool FileSender::terminal(void) const {
+  return state == State::Complete || state == State::Failed || state == State::Stopped;
 }
 
 void FileSender::init(void) {
+  if(state != State::Idle)
+    return;
+  state = State::WaitingForStart;
   socket = new QTcpSocket(this);
+  socket->setReadBufferSize(kControlLimit);
   connect(socket, &QAbstractSocket::connected, this, &FileSender::connected);
   connect(socket, &QAbstractSocket::disconnected, this, &FileSender::disconnected);
   connect(socket, &QIODevice::readyRead, this, &FileSender::readyRead);
   connect(socket, &QIODevice::bytesWritten, this, &FileSender::bytesWritten);
-
-  QHostAddress hostAddress(address);
-  socket->connectToHost(hostAddress, port);
+  connect(socket, &QAbstractSocket::errorOccurred, this, [this](QAbstractSocket::SocketError error) {
+    // A receipt can be buffered when the remote peer closes. Consume it
+    // before treating the close as an error.
+    if(error == QAbstractSocket::RemoteHostClosedError)
+      readyRead();
+    if(!terminal())
+      fail(socket ? socket->errorString() : QStringLiteral("Connection lost"));
+  });
+  connect(&timer, &QTimer::timeout, this, &FileSender::timer_timeout);
+  idleTimer.start();
+  timer.start(qMin(PROGRESS_TIMEOUT, qMax(1, idleTimeoutMs / 4)));
+  socket->connectToHost(QHostAddress(address), port);
 }
 
 void FileSender::stop(void) {
-  active = false;
-  finishing = false;
+  if(!terminal())
+    state = State::Stopped;
+  timer.stop();
+  if(file.isOpen())
+    file.close();
+  if(socket)
+    socket->abort();
+}
 
-  if(timer)
-    timer->stop();
-  if(file && file->isOpen())
-    file->close();
-  if(socket && socket->isOpen())
-    socket->close();
+void FileSender::fail(const QString& reason) {
+  if(terminal())
+    return;
+  state = State::Failed;
+  stop();
+  lmcTrace::write(QStringLiteral("File send failed: ") + reason);
+  QString data = reason;
+  emit progressUpdated(FM_Send, FO_Error, type, &id, &peerId, &data);
+}
+
+void FileSender::complete(void) {
+  if(terminal())
+    return;
+  state = State::Complete;
+  timer.stop();
+  file.close();
+  if(socket)
+    socket->disconnectFromHost();
+  emit progressUpdated(FM_Send, FO_Complete, type, &id, &peerId, &filePath);
 }
 
 void FileSender::connected(void) {
   QByteArray data = id.toLocal8Bit();
-  data.append(localId.toLocal8Bit());
-  data.insert(0, "FILE"); // insert indicator that this socket handles file transfer
-  //	send an id message and then wait for a START message
-  //	from receiver, which will trigger readyRead signal
-  socket->write(data);
+  data.append(localId.toUtf8());
+  data.insert(0, "FILE");
+  // This legacy routing header is consumed by lmcTcpNetwork before it
+  // hands the socket to FileReceiver. File payloads use START2/DONE2.
+  if(socket->write(data) != data.size())
+    fail(QStringLiteral("Unable to write file routing header"));
 }
 
 void FileSender::disconnected(void) {
-  if(finishing) {
-    finishing = false;
-    //  Graceful close hands every byte to the OS in order, but it cannot
-    //  prove delivery to the peer app (that is the receiver's FO_Complete).
-    //  A break during the drain must not report success.
-    if(socket->error() == QAbstractSocket::UnknownSocketError) {
-      emit progressUpdated(FM_Send, FO_Complete, type, &id, &peerId, &filePath);
-    } else {
-      QString data;
-      emit progressUpdated(FM_Send, FO_Error, type, &id, &peerId, &data);
-    }
-    return;
-  }
-
-  if(active) {
-    QString data;
-    emit progressUpdated(FM_Send, FO_Error, type, &id, &peerId, &data);
-  }
+  readyRead();
+  if(!terminal())
+    fail(QStringLiteral("Peer disconnected without confirming the saved file"));
 }
 
 void FileSender::readyRead(void) {
-  //	message received from receiver, start sending the file
-  sendFile();
+  if(!socket || terminal())
+    return;
+  const qint64 room = kControlLimit - control.size();
+  if(room <= 0) {
+    fail(QStringLiteral("Oversized transfer control message"));
+    return;
+  }
+  control.append(socket->read(room));
+  while(!terminal()) {
+    const qsizetype newline = control.indexOf('\n');
+    if(newline < 0)
+      break;
+    const QByteArray line = control.left(newline + 1);
+    control.remove(0, newline + 1);
+    if(state == State::WaitingForStart) {
+      if(line != kStart) {
+        fail(QStringLiteral("File transfer requires LanChat Lite START2 support on both devices"));
+        return;
+      }
+      idleTimer.restart();
+      sendFile();
+    } else if(state == State::WaitingForReceipt) {
+      const QByteArray expected = kDonePrefix + hash.result().toHex() + '\n';
+      if(line != expected) {
+        fail(QStringLiteral("Receiver receipt is invalid or file SHA-256 does not match"));
+        return;
+      }
+      complete();
+    } else {
+      fail(QStringLiteral("Unexpected transfer control message"));
+      return;
+    }
+  }
+  if(!terminal() && control.size() >= kControlLimit)
+    fail(QStringLiteral("Oversized transfer control message"));
 }
 
 void FileSender::timer_timeout(void) {
-  if(!active)
+  if(terminal())
     return;
-
-  QString transferred = QString::number(file->pos());
-  emit progressUpdated(FM_Send, FO_Progress, type, &id, &peerId, &transferred);
+  const int deadline = state == State::WaitingForStart ? qMin(idleTimeoutMs, kHandshakeTimeoutMs) : idleTimeoutMs;
+  if(idleTimer.hasExpired(deadline)) {
+    fail(state == State::WaitingForStart
+           ? QStringLiteral("No START2 response; both devices must run LanChat Lite")
+           : QStringLiteral("File transfer timed out without confirmed progress"));
+    return;
+  }
+  if(state == State::Sending || state == State::WaitingForReceipt) {
+    QString transferred = QString::number(qMax(qint64(0), queuedFileBytes - socket->bytesToWrite()));
+    emit progressUpdated(FM_Send, FO_Progress, type, &id, &peerId, &transferred);
+  }
 }
 
 void FileSender::bytesWritten(qint64 bytes) {
-  Q_UNUSED(bytes);
-
-  if(!active)
+  if(terminal())
     return;
+  if(bytes > 0)
+    idleTimer.restart();
+  if(state == State::Sending)
+    pump();
+}
 
-  qint64 unsentBytes = fileSize - file->pos();
-
-  if(unsentBytes <= 0) {
-    //  Whole file is read from disk, but bytes may still sit in socket
-    //  buffers. Close gracefully and report completion on disconnect.
-    active = false;
-    finishing = true;
-    file->close();
-    socket->disconnectFromHost();
+void FileSender::pump(void) {
+  if(state != State::Sending || !socket)
     return;
+  while(state == State::Sending && socket->bytesToWrite() < kQueueLimit) {
+    if(bufferOffset == bufferLength) {
+      if(file.pos() == fileSize) {
+        if(file.size() != fileSize) {
+          fail(QStringLiteral("Source file size changed during transfer"));
+          return;
+        }
+        file.close();
+        state = State::WaitingForReceipt;
+        // Includes zero-length files: never wait for a bytesWritten event
+        // that a zero-byte write cannot generate.
+        return;
+      }
+      const qint64 wanted = qMin(qint64(buffer.size()), fileSize - file.pos());
+      bufferLength = file.read(buffer.data(), wanted);
+      bufferOffset = 0;
+      if(bufferLength <= 0) {
+        fail(QStringLiteral("Source file read failed or ended before its advertised size"));
+        return;
+      }
+      hash.addData(QByteArrayView(buffer.data(), bufferLength));
+    }
+    const qint64 amount = qMin(bufferLength - bufferOffset, kQueueLimit - socket->bytesToWrite());
+    const qint64 written = socket->write(buffer.data() + bufferOffset, amount);
+    if(written < 0) {
+      fail(QStringLiteral("Unable to queue file data"));
+      return;
+    }
+    if(written == 0)
+      return;
+    bufferOffset += written;
+    queuedFileBytes += written;
   }
-
-  qint64 bytesToSend = (bufferSize < unsentBytes) ? bufferSize : unsentBytes;
-  qint64 bytesRead = file->read(buffer, bytesToSend);
-  socket->write(buffer, bytesRead);
-
-  //	if(file->pos() > milestone) {
-  //		QString transferred = QString::number(file->pos());
-  //		emit progressUpdated(FM_Send, FO_Progress, type, &id, &peerId, &transferred);
-  //		milestone += mile;
-  //	}
 }
 
 void FileSender::sendFile(void) {
-  file = new QFile(filePath);
-
-  if(file->open(QIODevice::ReadOnly)) {
-    buffer = new char[bufferSize];
-    active = true;
-
-    timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, &FileSender::timer_timeout);
-    timer->start(PROGRESS_TIMEOUT);
-
-    qint64 unsentBytes = fileSize - file->pos();
-    qint64 bytesToSend = (bufferSize < unsentBytes) ? bufferSize : unsentBytes;
-    qint64 bytesRead = file->read(buffer, bytesToSend);
-    socket->write(buffer, bytesRead);
-  } else {
-    socket->close();
-    QString data;
-    emit progressUpdated(FM_Send, FO_Error, type, &id, &peerId, &data);
+  if(state != State::WaitingForStart)
+    return;
+  file.setFileName(filePath);
+  if(fileSize < 0 || !file.open(QIODevice::ReadOnly) || file.size() != fileSize) {
+    fail(QStringLiteral("Source file cannot be opened or no longer matches the offered size"));
+    return;
   }
+  state = State::Sending;
+  hash.reset();
+  pump();
 }
-
 
 /****************************************************************************
 ** Class: FileReceiver
-** Description: Handles receiving files.
+** Description: Bounded streaming into an atomic temporary file.
 ****************************************************************************/
-FileReceiver::FileReceiver(void) {
-}
+FileReceiver::FileReceiver(void) = default;
 
 FileReceiver::FileReceiver(QString szId, QString szPeerId, QString szFilePath, QString szFileName,
-                           qint64 nFileSize, QString szAddress, int nPort, FileType nType) {
+                           qint64 nFileSize, QString szAddress, int nPort, FileType nType,
+                           int timeoutMs) {
   id = szId;
   peerId = szPeerId;
   filePath = szFilePath;
@@ -194,133 +270,197 @@ FileReceiver::FileReceiver(QString szId, QString szPeerId, QString szFilePath, Q
   fileSize = nFileSize;
   address = szAddress;
   port = nPort;
-  active = false;
-  mile = fileSize / 36;
-  milestone = mile;
-  file = NULL;
-  socket = NULL;
-  timer = NULL;
   type = nType;
-  lastPosition = 0;
-  numTimeOuts = 0;
+  idleTimeoutMs = qMax(1, timeoutMs);
 }
 
 FileReceiver::~FileReceiver(void) {
+  stop();
 }
 
-void FileReceiver::init(QTcpSocket* socket) {
-  this->socket = socket;
-  connect(socket, &QAbstractSocket::disconnected, this, &FileReceiver::disconnected);
-  connect(this->socket, &QIODevice::readyRead, this, &FileReceiver::readyRead);
+bool FileReceiver::terminal(void) const {
+  return state == State::Complete || state == State::Failed || state == State::Stopped;
+}
 
-  receiveFile();
-  //	now send a START message to sender
-  socket->write("START");
+void FileReceiver::init(QTcpSocket* incoming) {
+  if(state != State::Idle || !incoming) {
+    if(incoming && incoming != socket) {
+      incoming->abort();
+      incoming->deleteLater();
+    }
+    return;
+  }
+  socket = incoming;
+  socket->setParent(this);
+  socket->setReadBufferSize(kQueueLimit);
+  connect(socket, &QAbstractSocket::disconnected, this, &FileReceiver::disconnected);
+  connect(socket, &QIODevice::readyRead, this, &FileReceiver::readyRead);
+  connect(socket, &QAbstractSocket::errorOccurred, this, [this](QAbstractSocket::SocketError) {
+    // The final body bytes can already be buffered at a peer close.
+    readyRead();
+    if(!terminal())
+      fail(socket ? socket->errorString() : QStringLiteral("Connection lost"));
+  });
+  if(!receiveFile())
+    return;
+  if(socket->write(kStart) != kStart.size()) {
+    fail(QStringLiteral("Unable to start file transfer"));
+    return;
+  }
+  if(fileSize == 0)
+    finish();
+  else if(socket->bytesAvailable())
+    readyRead();
 }
 
 void FileReceiver::stop(void) {
-  bool deleteFile = false;
+  if(!terminal())
+    state = State::Stopped;
+  timer.stop();
+  // QSaveFile destruction cancels and removes an incomplete temporary file;
+  // a pre-existing destination is preserved on cancellation or failure.
+  file.reset();
+  if(socket)
+    socket->abort();
+}
 
-  active = false;
+void FileReceiver::fail(const QString& reason) {
+  if(terminal())
+    return;
+  state = State::Failed;
+  stop();
+  lmcTrace::write(QStringLiteral("File receive failed: ") + reason);
+  QString data = reason;
+  emit progressUpdated(FM_Receive, FO_Error, type, &id, &peerId, &data);
+}
 
-  if(timer)
-    timer->stop();
-  if(file && file->isOpen()) {
-    deleteFile = (file->pos() < fileSize);
-    file->close();
+void FileReceiver::finish(void) {
+  if(state != State::Receiving || receivedBytes != fileSize)
+    return;
+  // commit() checks pending writes, closes the file and atomically renames
+  // it; never acknowledge a failed/partial write or overwrite on failure.
+  if(!file->commit()) {
+    fail(QStringLiteral("Destination could not be committed to disk"));
+    return;
   }
-  if(socket && socket->isOpen())
-    socket->close();
-
-  if(deleteFile)
-    QFile::remove(filePath);
+  file.reset();
+  const QByteArray receipt = kDonePrefix + hash.result().toHex() + '\n';
+  state = State::Complete;
+  timer.stop();
+  // Local receive is complete even if the reply is lost. Only the sender
+  // that actually reads this digest is allowed to report send completion.
+  if(socket) {
+    // The owner removes FileReceiver as soon as FO_Complete is emitted.
+    // Let the small receipt drain independently; deleting this receiver
+    // must not delete/abort the socket before the sender reads it.
+    QTcpSocket* receiptSocket = socket;
+    socket.clear();
+    receiptSocket->setParent(nullptr);
+    connect(receiptSocket, &QAbstractSocket::disconnected, receiptSocket, &QObject::deleteLater);
+    QTimer::singleShot(5000, receiptSocket, [receiptSocket] {
+      receiptSocket->abort();
+      receiptSocket->deleteLater();
+    });
+    if(receiptSocket->write(receipt) == receipt.size())
+      receiptSocket->disconnectFromHost();
+    else {
+      receiptSocket->abort();
+      receiptSocket->deleteLater();
+    }
+  }
+  emit progressUpdated(FM_Receive, FO_Complete, type, &id, &peerId, &filePath);
 }
 
 void FileReceiver::disconnected(void) {
-  if(active) {
-    QString data;
-    emit progressUpdated(FM_Receive, FO_Error, type, &id, &peerId, &data);
-  }
+  readyRead();
+  if(!terminal())
+    fail(QStringLiteral("Peer disconnected before the advertised file was received"));
 }
 
 void FileReceiver::readyRead(void) {
-  if(!active)
+  if(state != State::Receiving || !socket)
     return;
-
-  //	Drain everything available: several chunks may arrive between event
-  //	loop turns, but Qt emits readyRead only once for them. Reading a
-  //	single chunk per signal leaves the tail buffered with no new signal
-  //	to wake us, stalling the transfer short of fileSize.
-  while(socket->bytesAvailable() > 0) {
-    qint64 bytesReceived = socket->read(buffer, bufferSize);
-    if(bytesReceived <= 0)
-      break;
-    if(file->write(buffer, bytesReceived) < 0) {
-      active = false;
-      file->close();
-      QFile::remove(filePath); // as in stop(): no partial file left
-      socket->close();
-      QString data;
-      emit progressUpdated(FM_Receive, FO_Error, type, &id, &peerId, &data);
+  qint64 budget = kReadBudget;
+  while(state == State::Receiving && socket->bytesAvailable() > 0 && budget > 0) {
+    const qint64 wanted = qMin(qint64(buffer.size()), fileSize - receivedBytes);
+    if(wanted <= 0) {
+      finish();
       return;
     }
-
-    qint64 unreceivedBytes = fileSize - file->pos();
-    if(unreceivedBytes <= 0) {
-      active = false;
-      file->close();
-      socket->close();
-      emit progressUpdated(FM_Receive, FO_Complete, type, &id, &peerId, &filePath);
+    const qint64 received = socket->read(buffer.data(), wanted);
+    if(received < 0) {
+      fail(QStringLiteral("File socket read failed"));
+      return;
+    }
+    if(received == 0)
+      break;
+    qint64 written = 0;
+    while(written < received) {
+      const qint64 count = file->write(buffer.data() + written, received - written);
+      if(count <= 0) {
+        fail(QStringLiteral("Destination file write failed"));
+        return;
+      }
+      written += count;
+    }
+    hash.addData(QByteArrayView(buffer.data(), received));
+    receivedBytes += received;
+    budget -= received;
+    idleTimer.restart();
+    if(receivedBytes == fileSize) {
+      // Never write beyond the explicitly accepted size.
+      if(socket->bytesAvailable() > 0) {
+        fail(QStringLiteral("Peer sent more data than the advertised file size"));
+        return;
+      }
+      finish();
       return;
     }
   }
-
-  //	if(file->pos() > milestone) {
-  //		QString transferred = QString::number(file->pos());
-  //		emit progressUpdated(FM_Receive, FO_Progress, type, &id, &peerId, &transferred);
-  //		milestone += mile;
-  //	}
+  // Yield between batches so a fast transfer cannot monopolize the GUI
+  // event loop. Resume even when Qt has no new readyRead signal to emit.
+  if(state == State::Receiving && socket->bytesAvailable() > 0 && !readScheduled) {
+    readScheduled = true;
+    QTimer::singleShot(0, this, [this] {
+      readScheduled = false;
+      readyRead();
+    });
+  }
 }
 
 void FileReceiver::timer_timeout(void) {
-  if(!active)
+  if(state != State::Receiving)
     return;
-
-  if(lastPosition < file->pos()) {
-    lastPosition = file->pos();
-    numTimeOuts = 0;
-  } else {
-    numTimeOuts++;
-    if(numTimeOuts > 20) {
-      QString data;
-      emit progressUpdated(FM_Receive, FO_Error, type, &id, &peerId, &data);
-      stop();
-      return;
-    }
+  if(idleTimer.hasExpired(idleTimeoutMs)) {
+    fail(QStringLiteral("File receive timed out without progress"));
+    return;
   }
-
-  QString transferred = QString::number(file->pos());
+  QString transferred = QString::number(receivedBytes);
   emit progressUpdated(FM_Receive, FO_Progress, type, &id, &peerId, &transferred);
 }
 
-void FileReceiver::receiveFile(void) {
-  QDir dir = QFileInfo(filePath).dir();
-  if(!dir.exists())
-    dir.mkpath(dir.absolutePath());
-
-  file = new QFile(filePath);
-
-  if(file->open(QIODevice::WriteOnly)) {
-    buffer = new char[bufferSize];
-    active = true;
-
-    timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, &FileReceiver::timer_timeout);
-    timer->start(PROGRESS_TIMEOUT);
-  } else {
-    socket->close();
-    emit progressUpdated(FM_Receive, FO_Error, type, &id, &peerId, &filePath);
+bool FileReceiver::receiveFile(void) {
+  if(fileSize < 0) {
+    fail(QStringLiteral("Invalid negative file size"));
+    return false;
   }
+  QDir dir = QFileInfo(filePath).dir();
+  if(!dir.exists() && !dir.mkpath(dir.absolutePath())) {
+    fail(QStringLiteral("Destination directory cannot be created"));
+    return false;
+  }
+  file = std::make_unique<QSaveFile>(filePath);
+  file->setDirectWriteFallback(false);
+  if(!file->open(QIODevice::WriteOnly)) {
+    fail(QStringLiteral("Destination file cannot be opened"));
+    return false;
+  }
+  state = State::Receiving;
+  hash.reset();
+  connect(&timer, &QTimer::timeout, this, &FileReceiver::timer_timeout);
+  idleTimer.start();
+  timer.start(qMin(PROGRESS_TIMEOUT, qMax(1, idleTimeoutMs / 4)));
+  return true;
 }
 
 
@@ -345,10 +485,15 @@ MsgStream::MsgStream(QString szLocalId, QString szPeerId, QString szPeerAddress,
 }
 
 MsgStream::~MsgStream(void) {
+  if(socket) {
+    disconnect(socket, nullptr, this, nullptr);
+    socket->abort();
+  }
 }
 
 void MsgStream::init(void) {
   socket = new QTcpSocket(this);
+  socket->setReadBufferSize(kMessageLimit + 4);
   connect(socket, &QAbstractSocket::connected, this, &MsgStream::connected);
   connect(socket, &QAbstractSocket::disconnected, this, &MsgStream::disconnected);
   connect(socket, &QIODevice::readyRead, this, &MsgStream::readyRead);
@@ -360,6 +505,8 @@ void MsgStream::init(void) {
 
 void MsgStream::init(QTcpSocket* socket) {
   this->socket = socket;
+  socket->setParent(this);
+  socket->setReadBufferSize(kMessageLimit + 4);
   connect(socket, &QAbstractSocket::disconnected, this, &MsgStream::disconnected);
   connect(this->socket, &QIODevice::readyRead, this, &MsgStream::readyRead);
   connect(socket, &QIODevice::bytesWritten, this, &MsgStream::bytesWritten);
@@ -371,6 +518,13 @@ void MsgStream::stop(void) {
 }
 
 void MsgStream::sendMessage(QByteArray& data) {
+  if(!socket)
+    return;
+  if(data.size() > kMessageLimit || socket->bytesToWrite() + qint64(sizeof(quint32)) + data.size() > 2 * kMessageLimit) {
+    lmcTrace::write("Error: Message size or outgoing queue exceeds its memory budget");
+    socket->abort();
+    return;
+  }
   qint32 dataLen = sizeof(quint32) + data.length();
   outDataLen += dataLen;
   outData.resize(dataLen);
@@ -402,32 +556,39 @@ void MsgStream::disconnected(void) {
 }
 
 void MsgStream::readyRead(void) {
-  qint64 available = socket->bytesAvailable();
-  while(available > 0) {
+  // TCP may split a four-byte length prefix or combine many complete
+  // frames in one readyRead. Do not consume a partial prefix.
+  while(socket && socket->bytesAvailable() > 0) {
     if(!reading) {
-      reading = true;
-      QByteArray len = socket->read(4);
-      QDataStream stream(len);
+      if(socket->bytesAvailable() < qint64(sizeof(quint32)))
+        return;
+      const QByteArray prefix = socket->read(sizeof(quint32));
+      QDataStream stream(prefix);
       stream.setVersion(QDataStream::Qt_5_15);
       stream >> inDataLen;
+      if(stream.status() != QDataStream::Ok || inDataLen > kMessageLimit) {
+        lmcTrace::write("Error: Invalid or oversized TCP message frame");
+        inData.clear();
+        socket->abort();
+        return;
+      }
+      reading = true;
       inData.clear();
-      QByteArray data = socket->read(inDataLen);
-      inData.append(data);
-      inDataLen -= data.length();
-      available -= (sizeof(quint32) + data.length());
-      if(inDataLen == 0) {
-        reading = false;
-        emit messageReceived(&peerId, &peerAddress, inData);
-      }
-    } else {
-      QByteArray data = socket->read(inDataLen);
-      inData.append(data);
-      inDataLen -= data.length();
-      available -= data.length();
-      if(inDataLen == 0) {
-        reading = false;
-        emit messageReceived(&peerId, &peerAddress, inData);
-      }
+      inData.reserve(int(inDataLen));
+    }
+    if(inDataLen > 0) {
+      const qint64 amount = qMin(qint64(inDataLen), socket->bytesAvailable());
+      if(amount <= 0)
+        return;
+      const QByteArray part = socket->read(amount);
+      if(part.isEmpty())
+        return;
+      inData.append(part);
+      inDataLen -= quint32(part.size());
+    }
+    if(inDataLen == 0) {
+      reading = false;
+      emit messageReceived(&peerId, &peerAddress, inData);
     }
   }
 }

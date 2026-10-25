@@ -30,7 +30,7 @@
 #include <QMessageBox>
 
 //	Define a unique application id. This is a combination of two GUIDs
-const QString appId = "93fab548-2cf5-4a1e-8758-a416a5ec2120-6fc5009f-84e8-4489-a444-7f934bcf9166";
+const QString appId = "io.github.wenlong66.lanchatlite";
 
 int showSwitches(void) {
   QString msg = "Usage:	lmc [switches]\n"
@@ -73,7 +73,7 @@ int lmcRunApplication(int argc, char* argv[],
 
   QApplication::setApplicationName(IDA_PRODUCT);
   QApplication::setOrganizationName(IDA_COMPANY);
-  QApplication::setOrganizationDomain(IDA_DOMAIN);
+  QApplication::setOrganizationDomain(QStringLiteral("wenlong66.github.io"));
   QApplication::setWindowIcon(QIcon(IDR_APPICON));
 
   QString messageList;

@@ -455,6 +455,11 @@ void lmcCore::showHelp(QRect* pRect) {
 }
 
 void lmcCore::showUpdate(QRect* pRect) {
+#ifdef LMC_LITE_BUILD
+  // Upstream update metadata describes a different application and protocol.
+  Q_UNUSED(pRect);
+  return;
+#else
   if(!pUpdateWindow) {
     pUpdateWindow = new lmcUpdateWindow(pRect);
     connect(pUpdateWindow, &lmcUpdateWindow::messageSent, this, &lmcCore::sendMessage);
@@ -468,6 +473,7 @@ void lmcCore::showUpdate(QRect* pRect) {
   pUpdateWindow->raise(); // make window the top most window of the application
   pUpdateWindow->show();
   pUpdateWindow->activateWindow(); // bring window to foreground
+#endif
 }
 
 void lmcCore::showAbout(void) {

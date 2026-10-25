@@ -718,6 +718,16 @@ void lmcMainWindow::createMainMenu(void) {
   aboutAction = ActionHelper::createAction(pHelpMenu, "&About", this, &lmcMainWindow::trayAboutAction_triggered,
                                            QIcon(QPixmap(IDR_INFO, "PNG")));
 
+#ifdef LMC_LITE_BUILD
+  chatRoomAction->setVisible(false);
+  chatRoomAction->setEnabled(false);
+  publicChatAction->setVisible(false);
+  publicChatAction->setEnabled(false);
+  // Upstream's update feed does not describe this separately versioned fork.
+  updateAction->setVisible(false);
+  updateAction->setEnabled(false);
+#endif
+
   layout()->setMenuBar(pMainMenu);
 }
 
@@ -818,6 +828,10 @@ void lmcMainWindow::createUserMenu(void) {
   pUserMenu->addSeparator();
   userInfoAction = ActionHelper::createAction(pUserMenu, "Get &Information", this,
                                               &lmcMainWindow::userInfoAction_triggered);
+#ifdef LMC_LITE_BUILD
+  userBroadcastAction->setVisible(false);
+  userBroadcastAction->setEnabled(false);
+#endif
 }
 
 void lmcMainWindow::createToolBar(void) {
@@ -863,6 +877,18 @@ void lmcMainWindow::createToolBar(void) {
   pButton->setAutoRaise(false);
   pButton = (QToolButton*)pToolBar->widgetForAction(toolPublicChatAction);
   pButton->setAutoRaise(false);
+#ifdef LMC_LITE_BUILD
+  toolBroadcastAction->setVisible(false);
+  toolBroadcastAction->setEnabled(false);
+  toolChatRoomAction->setVisible(false);
+  toolChatRoomAction->setEnabled(false);
+  toolPublicChatAction->setVisible(false);
+  toolPublicChatAction->setEnabled(false);
+  for(QAction* action : pToolBar->actions()) {
+    if(action->isSeparator())
+      action->setVisible(false);
+  }
+#endif
 }
 
 void lmcMainWindow::setUIText(void) {

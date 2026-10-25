@@ -24,3 +24,18 @@ add_test(NAME crypto COMMAND tst_crypto)
 # tst links Qt Widgets (via lmc_core) so QTest instantiates QApplication:
 # no X server needed for headless crypto checks.
 set_tests_properties(crypto PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+foreach(test_name IN ITEMS clipboardimage filetransfer)
+    add_executable(tst_${test_name} unit/tst_${test_name}.cpp)
+    target_link_libraries(tst_${test_name} PRIVATE lmc_core Qt6::Test)
+    set_target_properties(tst_${test_name} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/tests)
+    add_test(NAME ${test_name} COMMAND tst_${test_name})
+    set_tests_properties(${test_name} PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 90)
+endforeach()

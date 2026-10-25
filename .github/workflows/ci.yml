@@ -1,0 +1,259 @@
+name: Build and test LanChat Lite
+
+# Produces reviewable alpha artifacts only. No release publishing, schedules,
+# repository writes, secrets, or privileged pull_request_target execution.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LMC_VERSION: 0.1.0-alpha
+
+jobs:
+  linux:
+    name: Linux tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build libssl-dev \
+            qt6-base-dev qt6-base-dev-tools qt6-tools-dev \
+            qt6-tools-dev-tools qt6-l10n-tools qt6-translations-l10n \
+            qt6-multimedia-dev libgl1-mesa-dev xvfb xauth
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DLMC_VERSION="$LMC_VERSION"
+          -DLMC_LITE_BUILD=ON
+          -DLMC_BUILD_LMM=OFF
+          -DLMC_BUILD_TEST_AGENT=OFF
+          -DBUILD_TESTING=ON
+          -DLMC_RELEASE_DIR="$PWD/lmc/release"
+      - name: Compile
+        run: cmake --build build --parallel 2
+      - name: Unit and loopback tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure --no-tests=error --timeout 90
+      - name: Stage application and smoke test
+        run: |
+          cmake --build build --target package-local
+          cd lmc/release
+          timeout 30 xvfb-run -a ./lan-messenger.sh /loopback /noconfig /quit
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-log-linux
+          path: build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  windows:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          cache: true
+          set-env: true
+      - name: Install and stage OpenSSL
+        shell: pwsh
+        run: |
+          vcpkg install openssl:x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "OpenSSL build failed" }
+          $ssl = Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed/x64-windows'
+          New-Item -ItemType Directory -Force openssl/include, openssl/lib, openssl/bin | Out-Null
+          Copy-Item -Recurse "$ssl/include/openssl" openssl/include/
+          Copy-Item "$ssl/lib/libcrypto.lib" openssl/lib/
+          Copy-Item "$ssl/lib/libssl.lib" openssl/lib/
+          Copy-Item "$ssl/bin/libcrypto-*.dll" openssl/bin/
+          Copy-Item "$ssl/bin/libssl-*.dll" openssl/bin/
+          (Resolve-Path openssl/bin).Path | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          "-DLMC_VERSION=$env:LMC_VERSION"
+          -DLMC_LITE_BUILD=ON
+          -DLMC_BUILD_LMM=OFF
+          -DLMC_BUILD_TEST_AGENT=OFF
+          -DBUILD_TESTING=ON
+          "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR"
+          "-DOPENSSL_ROOT_DIR=$pwd/openssl"
+          "-DLMC_RELEASE_DIR=$pwd/lmc/release"
+      - name: Compile
+        run: cmake --build build --parallel 2
+      - name: Unit and loopback tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure --no-tests=error --timeout 90
+      - name: Stage portable runtime
+        shell: pwsh
+        run: |
+          cmake --build build --target package-local
+          if ($LASTEXITCODE -ne 0) { throw "Application staging failed" }
+          windeployqt --release lmc/release/lmc.exe
+          if ($LASTEXITCODE -ne 0) { throw "Qt deployment failed" }
+          if (-not (Test-Path lmc/release/tls)) {
+            Copy-Item -Recurse "$env:QT_ROOT_DIR/plugins/tls" lmc/release/tls
+          }
+          Copy-Item LICENSE lmc/release/LICENSE
+          Copy-Item docs/GETTING_STARTED.zh-CN.md lmc/release/GETTING_STARTED.zh-CN.md
+          Copy-Item docs/TEST_PLAN.zh-CN.md lmc/release/TEST_PLAN.zh-CN.md
+      - name: Smoke test without development Qt on PATH
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          runtime = Path('lmc/release').resolve()
+          env = os.environ.copy()
+          for key in ('QT_PLUGIN_PATH', 'QML2_IMPORT_PATH', 'QT_QPA_PLATFORM', 'QTDIR', 'QT_ROOT_DIR'):
+              env.pop(key, None)
+          system = Path(env['SystemRoot'])
+          env['PATH'] = os.pathsep.join(map(str, (runtime, system / 'System32', system)))
+          subprocess.run([str(runtime / 'lmc.exe'), '/loopback', '/noconfig', '/quit'],
+                         cwd=runtime, env=env, check=True, timeout=30)
+      - name: Pack Windows alpha archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path lmc/release/* -DestinationPath LanChat-Lite-windows-x64.zip
+          (Get-FileHash LanChat-Lite-windows-x64.zip -Algorithm SHA256).Hash.ToLower() + '  LanChat-Lite-windows-x64.zip' |
+            Set-Content -Encoding ascii LanChat-Lite-windows-x64.sha256
+      - name: Upload Windows alpha package
+        uses: actions/upload-artifact@v7
+        with:
+          name: LanChat-Lite-windows-x64
+          path: |
+            LanChat-Lite-windows-x64.zip
+            LanChat-Lite-windows-x64.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-log-windows-x64
+          path: build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: clang_64
+          modules: 'qtmultimedia qtshadertools qtimageformats'
+          cache: true
+          set-env: true
+      - name: Install OpenSSL
+        run: brew install openssl@3
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DLMC_VERSION="$LMC_VERSION"
+          -DLMC_LITE_BUILD=ON
+          -DLMC_BUILD_LMM=OFF
+          -DLMC_BUILD_TEST_AGENT=OFF
+          -DBUILD_TESTING=ON
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }}
+          -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+          -DLMC_RELEASE_DIR="$PWD/lmc/release"
+      - name: Compile
+        run: cmake --build build --parallel 2
+      - name: Unit and loopback tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure --no-tests=error --timeout 90
+      - name: Stage app and verify architecture
+        run: |
+          cmake --build build --target package-local
+          export QTDIR="$QT_ROOT_DIR"
+          cd lmc/setup/mac
+          bash ./stage-mac-app
+          lipo -verify_arch ${{ matrix.arch }} LAN-Messenger.app/Contents/MacOS/LAN-Messenger
+          codesign --verify --deep --strict LAN-Messenger.app
+      - name: Smoke test packaged app
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          env = os.environ.copy()
+          for key in ('QT_PLUGIN_PATH', 'QML2_IMPORT_PATH', 'QT_QPA_PLATFORM',
+                      'QTDIR', 'QT_ROOT_DIR', 'DYLD_LIBRARY_PATH', 'DYLD_FRAMEWORK_PATH',
+                      'DYLD_FALLBACK_LIBRARY_PATH', 'DYLD_FALLBACK_FRAMEWORK_PATH'):
+              env.pop(key, None)
+          env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin'
+          subprocess.run([
+              'lmc/setup/mac/LAN-Messenger.app/Contents/MacOS/LAN-Messenger',
+              '/loopback', '/noconfig', '/quit',
+          ], env=env, check=True, timeout=30)
+          PY
+      - name: Pack alpha app
+        run: |
+          mkdir -p macos-package
+          cp -R lmc/setup/mac/LAN-Messenger.app macos-package/
+          cp LICENSE docs/GETTING_STARTED.zh-CN.md docs/TEST_PLAN.zh-CN.md macos-package/
+          ditto -c -k --sequesterRsrc --keepParent macos-package LanChat-Lite-macos-${{ matrix.arch }}.zip
+          shasum -a 256 LanChat-Lite-macos-${{ matrix.arch }}.zip > LanChat-Lite-macos-${{ matrix.arch }}.sha256
+      - name: Upload macOS alpha package
+        uses: actions/upload-artifact@v7
+        with:
+          name: LanChat-Lite-macos-${{ matrix.arch }}
+          path: |
+            LanChat-Lite-macos-${{ matrix.arch }}.zip
+            LanChat-Lite-macos-${{ matrix.arch }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-log-macos-${{ matrix.arch }}
+          path: build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+          retention-days: 14
