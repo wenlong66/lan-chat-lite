@@ -16,6 +16,8 @@ Artifacts 是开发构建，有保留期限；下载通常需要登录 GitHub。
 
 下载 Artifact 后先解压外层归档，再解压其中的 ZIP；同时提供 `.sha256` 校验值。Windows 包中运行 `lmc.exe`；Mac 包中的应用暂沿用 `LAN-Messenger.app` 文件名，界面为 LanChat Lite，保留文件名可减少上游打包路径变更。请将 Mac 应用放到独立测试目录，不覆盖已有的原版 LAN Messenger。
 
+Windows 首次启动若提示缺少 `VCRUNTIME` / `MSVCP`，先安装包内的 `vc_redist.x64.exe`（Microsoft Visual C++ x64 运行库），再启动应用。Qt 的部署工具在本次构建中附带这个安装程序；GitHub 的 Windows runner 已有 VC 运行库，因此包启动烟测仍不能代替全新 Windows 系统的验证。
+
 测试包没有付费代码签名或 Apple 公证；Mac 打包步骤仅做运行所需的 ad-hoc 签名。如系统阻止首次打开，可在核对来源后按系统的“隐私与安全性”页面提示允许该应用。不要全局关闭系统安全检查。
 
 ## 2. 两台真实电脑的第一次测试

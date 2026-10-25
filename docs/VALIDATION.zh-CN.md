@@ -2,10 +2,44 @@
 
 日期：2026-10-25。版本：**0.1.0-alpha**。
 
-本记录对应首个 LanChat Lite 提交所包含的源代码，基于上游 LAN Messenger
+本记录对应 LanChat Lite 首版源代码，基于上游 LAN Messenger
 `v1.3.9` / `a4d364a384d5c8c615f443c062a77c00ca4412b2`。
+首个应用提交为 `d989c34bf8f9884d8438df33e3a020c3dd68d390`；以下完整 CI 对应
+`5642680df3bb9073a6106a60cc6f75a18a2c7f2b`，其应用 C++ 源码相同，仅修正两处打包脚本。
 
-## 已实际执行
+## GitHub Actions 跨平台验证：全部通过
+
+[第二轮完整运行 40196244267](https://github.com/wenlong66/lan-chat-lite/actions/runs/40196244267)
+于 2026-10-25 13:20 UTC 完成，最终状态为 `completed / success`。
+
+| 平台 / runner | 自动测试 | 打包与启动检查 |
+|---|---|---|
+| Windows x64 / windows-2022 / Qt 6.8.3 | 3/3 套件通过，8.36 秒 | windeployqt、清理开发 Qt 环境后启动、ZIP 与 SHA-256 上传均通过 |
+| Apple Silicon / macos-15 / Qt 6.8.3 | 3/3 套件通过，9.14 秒 | 架构检查、ad-hoc 签名、清理 Qt/DYLD 环境后启动、ZIP 与 SHA-256 上传均通过 |
+| Intel Mac / macos-15-intel / Qt 6.8.3 | 3/3 套件通过，12.42 秒 | 架构检查、ad-hoc 签名、清理 Qt/DYLD 环境后启动、ZIP 与 SHA-256 上传均通过 |
+| Linux / ubuntu-24.04 / 发行版 Qt 6 | 3/3 套件通过，4.55 秒 | 本地布局打包与 xvfb 启动检查通过 |
+
+已核对四个 job 的最终状态、逐步结果、完整日志和实际上传的 artifacts。
+这些 CTest 耗时用于记录执行情况，不是文件传输性能成绩。
+
+### 同一提交的可下载测试包
+
+| 平台 | Artifact | 归档大小 |
+|---|---|---:|
+| Windows x64 | [LanChat-Lite-windows-x64](https://github.com/wenlong66/lan-chat-lite/actions/runs/40196244267/artifacts/12600392437) | 61,392,240 bytes |
+| Apple Silicon Mac | [LanChat-Lite-macos-arm64](https://github.com/wenlong66/lan-chat-lite/actions/runs/40196244267/artifacts/12600031634) | 47,004,175 bytes |
+| Intel Mac | [LanChat-Lite-macos-x86_64](https://github.com/wenlong66/lan-chat-lite/actions/runs/40196244267/artifacts/12600371893) | 46,781,081 bytes |
+
+三份 artifact 均来自提交 `5642680df3bb9073a6106a60cc6f75a18a2c7f2b`，内含应用 ZIP 和
+对应 `.sha256` 文件，当前到期日为 2026-11-08 UTC。下载需要 GitHub 登录。
+过期后可在本仓库 Actions 中手动运行工作流或构建源码。上表大小不是运行内存。
+
+首轮运行中，四个平台的编译与 CTest 已通过，但 Mac 的 `lipo` 参数顺序和 Windows
+烟测的 `SYSTEMROOT` 环境变量大小写使打包步骤失败；两处均已修复并完成整轮复验。
+Windows 包附有 `vc_redist.x64.exe`，新电脑可能仍需安装 Microsoft VC 运行库；
+GitHub runner 已有系统运行库，干净实体机测试仍待进行。
+
+## 本地 Linux 验证
 
 环境：Ubuntu 24.04 x86_64、GCC 13.3.0、CMake 3.28.3、Qt 6.4.2、OpenSSL 3.0.13。
 这是开发容器中的 Linux 测试；TCP 测试通过真实 loopback socket 运行。
@@ -58,8 +92,8 @@ CI 运行后也会上传相应日志 artifact。构建目录与临时测试文�
 
 ## 必须另行验证
 
-初始本地验证时尚未运行远程 Windows/macOS CI。以仓库 Actions 的实际运行状态与日志为准，
-不要仅凭已提交工作流就宣称各平台通过。
+上述远程任务在各自 runner 上独立执行，网络回归使用本机 TCP 回环连接。
+真实 Windows 与 Mac 之间的发现、互传、性能和长期运行仍需两台电脑验证。
 
 下面这些项目仍需要两台真实电脑按 [测试计划](TEST_PLAN.zh-CN.md) 完成：
 
