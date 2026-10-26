@@ -24,6 +24,7 @@
 
 #include <QMessageBox>
 #include <QActionGroup>
+#include <QTreeWidgetItemIterator>
 #include "broadcastwindow.h"
 
 //	constructor
@@ -223,6 +224,9 @@ void lmcBroadcastWindow::btnSelectNone_clicked(void) {
 //	event called when the user checks/unchecks a tree item
 void lmcBroadcastWindow::tvUserList_itemChanged(QTreeWidgetItem* item, int column) {
   Q_UNUSED(column);
+#ifdef LMC_LITE_BUILD
+  Q_UNUSED(item);
+#else
 
   //	if parent tree item was toggled, update all its children to the same state
   //	if a child tree item was toggled, two cases arise:
@@ -244,6 +248,7 @@ void lmcBroadcastWindow::tvUserList_itemChanged(QTreeWidgetItem* item, int colum
     parent->setCheckState(0, check);
     childToggling = false;
   }
+#endif
 }
 
 void lmcBroadcastWindow::btnSend_clicked(void) {
@@ -325,14 +330,11 @@ void lmcBroadcastWindow::sendMessage(void) {
     int sendCount = 0;
     XmlMessage xmlMessage;
     xmlMessage.addData(XN_BROADCAST, szMessage);
-    for(int index = 0; index < ui.tvUserList->topLevelItemCount(); index++) {
-      for(int childIndex = 0; childIndex < ui.tvUserList->topLevelItem(index)->childCount(); childIndex++) {
-        QTreeWidgetItem* item = ui.tvUserList->topLevelItem(index)->child(childIndex);
-        if(item->checkState(0) == Qt::Checked) {
-          QString szUserId = item->data(0, IdRole).toString();
-          emit messageSent(MT_Broadcast, &szUserId, &xmlMessage);
-          sendCount++;
-        }
+    for(QTreeWidgetItemIterator item(ui.tvUserList); *item; ++item) {
+      if((*item)->data(0, TypeRole).toString() == "User" && (*item)->checkState(0) == Qt::Checked) {
+        QString szUserId = (*item)->data(0, IdRole).toString();
+        emit messageSent(MT_Broadcast, &szUserId, &xmlMessage);
+        sendCount++;
       }
     }
 

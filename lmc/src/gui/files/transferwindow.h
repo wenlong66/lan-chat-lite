@@ -71,6 +71,8 @@ private slots:
   void updateProgress(FileView* view, qint64 currentPos);
 
 private:
+  friend class TstFileReceive;
+
   void createToolBar(void);
   void setUIText(void);
   void setButtonState(FileView::TransferState state);

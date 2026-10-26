@@ -158,6 +158,11 @@ void lmcMessaging::settingsChanged(void) {
 }
 
 void lmcMessaging::updateGroup(GroupOp op, QVariant value1, QVariant value2) {
+#ifdef LMC_LITE_BUILD
+  Q_UNUSED(op);
+  Q_UNUSED(value1);
+  Q_UNUSED(value2);
+#else
   switch(op) {
   case GO_New:
     groupList.append(Group(value1.toString(), value2.toString()));
@@ -191,19 +196,26 @@ void lmcMessaging::updateGroup(GroupOp op, QVariant value1, QVariant value2) {
   }
 
   saveGroups();
+#endif
 }
 
 void lmcMessaging::updateGroupMap(QString oldGroup, QString newGroup) {
+#ifdef LMC_LITE_BUILD
+  Q_UNUSED(oldGroup);
+  Q_UNUSED(newGroup);
+#else
   QMap<QString, QString>::const_iterator index = userGroupMap.constBegin();
   while(index != userGroupMap.constEnd()) {
     if(((QString)index.value()).compare(oldGroup) == 0)
       userGroupMap.insert(index.key(), newGroup);
     ++index;
   }
+#endif
 }
 
 //	save groups and group mapping
 void lmcMessaging::saveGroups(void) {
+#ifndef LMC_LITE_BUILD
   QSettings groupSettings(StdLocation::groupFile(), QSettings::IniFormat);
   groupSettings.beginWriteArray(IDS_GROUPHDR);
   for(int index = 0; index < groupList.count(); index++) {
@@ -231,6 +243,7 @@ void lmcMessaging::saveGroups(void) {
   // so the group settings will not be wrongly migrated next time
   // application starts
   pSettings->setValue(IDS_VERSION, IDA_VERSION);
+#endif
 }
 
 int lmcMessaging::userCount(void) {
@@ -273,6 +286,7 @@ QString lmcMessaging::getUserName(void) {
 }
 
 void lmcMessaging::loadGroups(void) {
+#ifndef LMC_LITE_BUILD
   bool defaultFound = false;
 
   QSettings groupSettings(StdLocation::groupFile(), QSettings::IniFormat);
@@ -299,6 +313,7 @@ void lmcMessaging::loadGroups(void) {
     userGroupMap.insert(user, group);
   }
   groupSettings.endArray();
+#endif
 }
 
 void lmcMessaging::getUserInfo(XmlMessage* pMessage) {
@@ -331,12 +346,14 @@ bool lmcMessaging::addUser(QString szUserId, QString szVersion, QString szAddres
 
   lmcTrace::write("Adding new user: " + szUserId + ", " + szVersion + ", " + szAddress);
 
+#ifndef LMC_LITE_BUILD
   if(!userGroupMap.contains(szUserId) || !groupList.contains(Group(userGroupMap.value(szUserId))))
     userGroupMap.insert(szUserId, GRP_DEFAULT_ID);
+#endif
 
   int nAvatar = szAvatar.isNull() ? -1 : szAvatar.toInt();
 
-  userList.append(User(szUserId, szVersion, szAddress, szName, szStatus, userGroupMap[szUserId],
+  userList.append(User(szUserId, szVersion, szAddress, szName, szStatus, userGroupMap.value(szUserId),
                        nAvatar, szNote, QString(), szCaps));
   if(!szStatus.isNull()) {
     XmlMessage xmlMessage;
@@ -396,9 +413,11 @@ void lmcMessaging::updateUser(MessageType type, QString szUserId, QString szUser
     }
     break;
   case MT_Group:
+#ifndef LMC_LITE_BUILD
     pUser->group = szUserData;
     userGroupMap.insert(pUser->id, pUser->group);
     saveGroups();
+#endif
     break;
   case MT_Avatar:
     pUser->avatarPath = szUserData;

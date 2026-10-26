@@ -24,6 +24,8 @@
 
 #include "settings.h"
 #include "stdlocation.h"
+#include "application.h"
+#include <QLocale>
 
 lmcSettingsBase::lmcSettingsBase(void)
     : QSettings() {
@@ -45,6 +47,10 @@ void lmcSettingsBase::setValue(const QString& key, const QVariant& value, const 
     QSettings::setValue(key, value);
   else
     remove(key);
+}
+
+QString lmcSettings::language(void) const {
+  return Application::supportedLanguage(value(IDS_LANGUAGE, QLocale::system().name()).toString());
 }
 
 //	migrate settings from older versions to new format
@@ -303,6 +309,11 @@ void lmcSettings::setAutoStart(bool on) {
 //	The function expects the config file to exist. Validation must be done
 //	prior to calling the function.
 bool lmcSettings::migrateSettings(const QString& configFile) {
+#ifdef LMC_LITE_BUILD
+  // Lite has an independent version sequence and does not migrate upstream groups.
+  Q_UNUSED(configFile);
+  return true;
+#else
   lmcSettingsBase settings(configFile, QSettings::IniFormat);
 
   QString version = settings.value(IDS_VERSION, IDS_VERSION_VAL).toString();
@@ -466,4 +477,5 @@ bool lmcSettings::migrateSettings(const QString& configFile) {
   settings.setValue(IDS_VERSION, IDA_VERSION);
   settings.sync();
   return true;
+#endif
 }

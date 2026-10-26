@@ -23,6 +23,7 @@
 
 
 #include "userselectdialog.h"
+#include <QTreeWidgetItemIterator>
 
 lmcUserSelectDialog::lmcUserSelectDialog(QWidget* parent)
     : QDialog(parent) {
@@ -85,13 +86,10 @@ void lmcUserSelectDialog::changeEvent(QEvent* pEvent) {
 void lmcUserSelectDialog::btnOK_clicked(void) {
   selectedContacts.clear();
 
-  for(int index = 0; index < ui.tvUserList->topLevelItemCount(); index++) {
-    for(int childIndex = 0; childIndex < ui.tvUserList->topLevelItem(index)->childCount(); childIndex++) {
-      QTreeWidgetItem* item = ui.tvUserList->topLevelItem(index)->child(childIndex);
-      if(item->checkState(0) == Qt::Checked) {
-        QString szUserId = item->data(0, IdRole).toString();
-        selectedContacts.append(szUserId);
-      }
+  for(QTreeWidgetItemIterator item(ui.tvUserList); *item; ++item) {
+    if((*item)->data(0, TypeRole).toString() == "User" && (*item)->checkState(0) == Qt::Checked) {
+      QString szUserId = (*item)->data(0, IdRole).toString();
+      selectedContacts.append(szUserId);
     }
   }
 }
@@ -99,6 +97,14 @@ void lmcUserSelectDialog::btnOK_clicked(void) {
 //	event called when the user checks/unchecks a tree item
 void lmcUserSelectDialog::tvUserList_itemChanged(QTreeWidgetItem* item, int column) {
   Q_UNUSED(column);
+#ifdef LMC_LITE_BUILD
+  Q_UNUSED(item);
+  selectedCount = 0;
+  for(int index = 0; index < ui.tvUserList->topLevelItemCount(); index++) {
+    if(ui.tvUserList->topLevelItem(index)->checkState(0) == Qt::Checked)
+      selectedCount++;
+  }
+#else
 
   //	if parent tree item was toggled, update all its children to the same state
   //	if a child tree was toggled, two cases arise:
@@ -123,6 +129,7 @@ void lmcUserSelectDialog::tvUserList_itemChanged(QTreeWidgetItem* item, int colu
     item->checkState(0) ? selectedCount++ : selectedCount--;
     childToggling = false;
   }
+#endif
 
   ui.btnOK->setEnabled((selectedCount > 0));
 }

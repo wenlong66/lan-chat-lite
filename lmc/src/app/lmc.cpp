@@ -25,6 +25,7 @@
 #include <QMessageBox>
 #include <QSet>
 #include <QTranslator>
+#include <memory>
 #include "core/trace.h"
 #include "lmc.h"
 
@@ -148,7 +149,7 @@ void lmcCore::loadSettings(void) {
       QMessageBox::warning(NULL, lmcStrings::appName(), message.arg(configFile, lmcStrings::appName()));
     }
   }
-  lang = pSettings->value(IDS_LANGUAGE, IDS_LANGUAGE_VAL).toString();
+  lang = pSettings->language();
   Application::setLanguage(lang);
   Application::setLayoutDirection(tr("LAYOUT_DIRECTION") == RTL_LAYOUT ? Qt::RightToLeft : Qt::LeftToRight);
   messageTop = pSettings->value(IDS_MESSAGETOP, IDS_MESSAGETOP_VAL).toBool();
@@ -187,7 +188,7 @@ void lmcCore::settingsChanged(void) {
     pTimer->setInterval(refreshTime);
   bool autoStart = pSettings->value(IDS_AUTOSTART, IDS_AUTOSTART_VAL).toBool();
   lmcSettings::setAutoStart(autoStart);
-  QString appLang = pSettings->value(IDS_LANGUAGE, IDS_LANGUAGE_VAL).toString();
+  QString appLang = pSettings->language();
   if(appLang.compare(lang) != 0) {
     lang = appLang;
     Application::setLanguage(lang);
@@ -929,6 +930,14 @@ QStringList lmcCore::showSelectContacts(QWidget* parent, uint caps, QStringList*
   QList<QTreeWidgetItem*> contactsList = pMainWindow->getContactsList();
   for(int index = 0; index < contactsList.count(); index++) {
     QTreeWidgetItem* pItem = contactsList.value(index);
+#ifdef LMC_LITE_BUILD
+    QString userId = pItem->data(0, IdRole).toString();
+    User* pUser = pMessaging->getUser(&userId);
+    if(!pUser || (pUser->caps & caps) != caps || excludeList->contains(userId)) {
+      const std::unique_ptr<QTreeWidgetItem> removedItem(contactsList.takeAt(index));
+      index--;
+    }
+#else
     for(int childIndex = 0; childIndex < pItem->childCount(); childIndex++) {
       QTreeWidgetItem* pChildItem = pItem->child(childIndex);
       QString userId = pChildItem->data(0, IdRole).toString();
@@ -944,6 +953,7 @@ QStringList lmcCore::showSelectContacts(QWidget* parent, uint caps, QStringList*
         continue;
       }
     }
+#endif
   }
 
   pUserSelectDialog->init(&contactsList);

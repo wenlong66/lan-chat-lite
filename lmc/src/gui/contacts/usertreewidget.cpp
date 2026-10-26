@@ -23,6 +23,7 @@
 
 
 #include "usertreewidget.h"
+#include <QTreeWidgetItemIterator>
 
 lmcUserTreeWidgetItem::lmcUserTreeWidgetItem()
     : QTreeWidgetItem(UserType + 1) {
@@ -229,10 +230,9 @@ void lmcUserTreeWidget::setView(UserListView view) {
   viewType = view;
 
   //	Set the item heights for the selected view type
-  for(int index = 0; index < topLevelItemCount(); index++) {
-    QTreeWidgetItem* item = topLevelItem(index);
-    for(int childIndex = 0; childIndex < item->childCount(); childIndex++)
-      item->child(childIndex)->setSizeHint(0, QSize(0, itemViewHeight[viewType]));
+  for(QTreeWidgetItemIterator item(this); *item; ++item) {
+    if((*item)->data(0, TypeRole).toString() == "User")
+      (*item)->setSizeHint(0, QSize(0, itemViewHeight[viewType]));
   }
 }
 
@@ -246,7 +246,7 @@ void lmcUserTreeWidget::mousePressEvent(QMouseEvent* event) {
     parentId = QString();
     expanded = false;
 
-    if(item) {
+    if(item && dragEnabled()) {
       dragItem = item;
       if(dynamic_cast<lmcUserTreeWidgetGroupItem*>(item)) {
         dragGroup = true;

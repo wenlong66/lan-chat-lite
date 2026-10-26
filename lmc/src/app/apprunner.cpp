@@ -33,27 +33,27 @@
 const QString appId = "io.github.wenlong66.lanchatlite";
 
 int showSwitches(void) {
-  QString msg = "Usage:	lmc [switches]\n"
-                "	All switches are optional.\n"
-                "\n"
-                "/loopback - Allows loopback communication with local machine.\n"
-                "/nohistory - Deletes existing history.\n"
-                "/nofilehistory - Deletes existing file transfer history.\n"
-                "/noconfig - Resets preferences to default values.\n"
-                "/sync - Synchronizes application settings and their external dependencies.\n"
-                "/unsync - Removes all external application dependencies.\n"
-                "/term - Closes an instance which is already running.\n"
-                "/inst - Returns a value indicating whether an instance is already running.\n"
-                "/quit - Closes once the command line parameters are processed.\n"
-                "/trace - Enables debug logging to logs/lmc_*.log (disabled by default).\n"
-                "/? - Display this help.\n"
-                "\n"
-                "Example:\n"
-                "Start in loopback mode with default settings: lmc /loopback /noconfig\n"
-                "\n"
-                "Some command line switches are mutually exclusive. If multiple switches\n"
-                "are specified, they will take precedence in the order given above.\n"
-                "Copyright (C) 2010-2012 Qualia Digital Solutions.\n";
+  QString msg = QCoreApplication::translate("AppRunner", "Usage:	lmc [switches]\n"
+                                                         "	All switches are optional.\n"
+                                                         "\n"
+                                                         "/loopback - Allows loopback communication with local machine.\n"
+                                                         "/nohistory - Deletes existing history.\n"
+                                                         "/nofilehistory - Deletes existing file transfer history.\n"
+                                                         "/noconfig - Resets preferences to default values.\n"
+                                                         "/sync - Synchronizes application settings and their external dependencies.\n"
+                                                         "/unsync - Removes all external application dependencies.\n"
+                                                         "/term - Closes an instance which is already running.\n"
+                                                         "/inst - Returns a value indicating whether an instance is already running.\n"
+                                                         "/quit - Closes once the command line parameters are processed.\n"
+                                                         "/trace - Enables debug logging to logs/lmc_*.log (disabled by default).\n"
+                                                         "/? - Display this help.\n"
+                                                         "\n"
+                                                         "Example:\n"
+                                                         "Start in loopback mode with default settings: lmc /loopback /noconfig\n"
+                                                         "\n"
+                                                         "Some command line switches are mutually exclusive. If multiple switches\n"
+                                                         "are specified, they will take precedence in the order given above.\n"
+                                                         "Copyright (C) 2010-2012 Qualia Digital Solutions.\n");
   QMessageBox::information(NULL, IDA_TITLE, msg, QMessageBox::Ok);
   return 0;
 }
@@ -76,6 +76,12 @@ int lmcRunApplication(int argc, char* argv[],
   QApplication::setOrganizationDomain(QStringLiteral("wenlong66.github.io"));
   QApplication::setWindowIcon(QIcon(IDR_APPICON));
 
+  application.loadTranslations(StdLocation::resLangDir());
+  application.loadTranslations(StdLocation::sysLangDir());
+  application.loadTranslations(StdLocation::userLangDir());
+  const lmcSettings settings;
+  application.setLanguage(settings.language());
+
   QString messageList;
   QStringList arguments = QApplication::arguments();
 
@@ -91,10 +97,6 @@ int lmcRunApplication(int argc, char* argv[],
   if(application.sendMessage(messageList))
     return 0;
 
-  application.loadTranslations(StdLocation::resLangDir());
-  application.loadTranslations(StdLocation::sysLangDir());
-  application.loadTranslations(StdLocation::userLangDir());
-
   lmcCore core;
   //	handle command line args if this is first instance
   //	some args are handled when the application is initializing
@@ -107,11 +109,11 @@ int lmcRunApplication(int argc, char* argv[],
     return 1;
 
 #ifdef QT_NO_SSL
-  if(QMessageBox::critical(nullptr, IDA_TITLE, "Qt is compiled with QT_NO_SSL. Some functions will not work correctly. Quit application?", QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes)
+  if(QMessageBox::critical(nullptr, IDA_TITLE, QCoreApplication::translate("AppRunner", "Qt is compiled with QT_NO_SSL. Some functions will not work correctly. Quit application?"), QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes)
     return 2;
 #else
   if(!QSslSocket::supportsSsl()) {
-    if(QMessageBox::critical(nullptr, IDA_TITLE, "Messenger does not find ssl at startup. Probably missing openssl dll. Some functions will not work correctly. Quit application?", QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes)
+    if(QMessageBox::critical(nullptr, IDA_TITLE, QCoreApplication::translate("AppRunner", "Messenger does not find ssl at startup. Probably missing openssl dll. Some functions will not work correctly. Quit application?"), QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes)
       return 3;
   }
 #endif

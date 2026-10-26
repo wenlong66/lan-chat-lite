@@ -25,8 +25,10 @@
 #include <QDesktopServices>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QTemporaryDir>
 #include <QUrl>
 #include "transferwindow.h"
+#include "core/trace.h"
 #include "gui/widgets/actionhelper.h"
 
 lmcTransferWindow::lmcTransferWindow(QWidget* parent)
@@ -347,22 +349,24 @@ void lmcTransferWindow::setButtonState(FileView::TransferState state) {
 
 QPixmap lmcTransferWindow::getIcon(QString filePath) {
   QFileIconProvider iconProvider;
-  QFileInfo fileInfo(filePath);
-  QPixmap icon;
+  const QFileInfo fileInfo(filePath);
+  if(fileInfo.exists())
+    return iconProvider.icon(fileInfo).pixmap(32, 32);
+  if(fileInfo.fileName().isEmpty())
+    return iconProvider.icon(QFileIconProvider::File).pixmap(32, 32);
 
-  if(QFile::exists(filePath))
-    icon = iconProvider.icon(fileInfo).pixmap(32, 32);
-  else {
-    QString fileName = fileInfo.fileName();
-    QString path = QDir::temp().absoluteFilePath(fileName);
-    QFile file(path);
-    file.open(QIODevice::WriteOnly);
-    file.close();
-    icon = iconProvider.icon(QFileInfo(path)).pixmap(32, 32);
-    QFile::remove(path);
+  QTemporaryDir directory(QDir::temp().filePath("lanchat-lite-icons-XXXXXX"));
+  if(!directory.isValid()) {
+    lmcTrace::write("Could not create temporary file icon directory: " + directory.errorString());
+    return iconProvider.icon(QFileIconProvider::File).pixmap(32, 32);
   }
-
-  return icon;
+  QFile file(directory.filePath(fileInfo.fileName()));
+  if(!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+    lmcTrace::write("Could not create temporary file icon: " + file.errorString());
+    return iconProvider.icon(QFileIconProvider::File).pixmap(32, 32);
+  }
+  file.close();
+  return iconProvider.icon(QFileInfo(file.fileName())).pixmap(32, 32);
 }
 
 QString lmcTransferWindow::formatTime(qint64 size, qint64 speed) {
@@ -376,19 +380,19 @@ QString lmcTransferWindow::formatTime(qint64 size, qint64 speed) {
   int time = size / speed;
   QString s;
   if(time > d) {
-    s.append(QString("%1d ").arg(time / d));
+    s.append(tr("%1d ").arg(time / d));
     time %= d;
   }
   if(time > h) {
-    s.append(QString("%1h ").arg(time / h));
+    s.append(tr("%1h ").arg(time / h));
     time %= h;
   }
   if(time > m) {
-    s.append(QString("%1m ").arg(time / m));
+    s.append(tr("%1m ").arg(time / m));
     time %= m;
   }
   if(time >= 0)
-    s.append(QString("%1s ").arg(time));
+    s.append(tr("%1s ").arg(time));
 
   return s.trimmed();
 }

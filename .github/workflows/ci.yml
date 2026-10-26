@@ -119,8 +119,13 @@ jobs:
         run: |
           cmake --build build --target package-local
           if ($LASTEXITCODE -ne 0) { throw "Application staging failed" }
-          windeployqt --release lmc/release/lmc.exe
+          windeployqt --release --no-compiler-runtime lmc/release/lmc.exe
           if ($LASTEXITCODE -ne 0) { throw "Qt deployment failed" }
+          $crt = Join-Path $env:VCToolsRedistDir 'x64/Microsoft.VC143.CRT'
+          if (-not (Test-Path "$crt/vcruntime140.dll")) {
+            throw "App-local Visual C++ runtime not found: $crt"
+          }
+          Copy-Item "$crt/*.dll" lmc/release/
           if (-not (Test-Path lmc/release/tls)) {
             Copy-Item -Recurse "$env:QT_ROOT_DIR/plugins/tls" lmc/release/tls
           }
@@ -134,6 +139,9 @@ jobs:
           from pathlib import Path
           import subprocess
           runtime = Path('lmc/release').resolve()
+          for name in ('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll'):
+              if not (runtime / name).is_file():
+                  raise RuntimeError(f'Missing app-local runtime: {name}')
           env = os.environ.copy()
           for key in ('QT_PLUGIN_PATH', 'QML2_IMPORT_PATH', 'QT_QPA_PLATFORM', 'QTDIR', 'QT_ROOT_DIR'):
               env.pop(key, None)

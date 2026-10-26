@@ -26,6 +26,8 @@
 #include <QTimer>
 #include <QRandomGenerator>
 #include <QUrl>
+#include <QTreeWidgetItemIterator>
+#include <memory>
 #include "mainwindow.h"
 #include "gui/widgets/actionhelper.h"
 #include "gui/chat/messagelog.h"
@@ -144,12 +146,14 @@ void lmcMainWindow::stop(void) {
     pSettings->setValue(IDS_MINIMIZEMSG, showMinimizeMsg, IDS_MINIMIZEMSG_VAL);
   }
 
+#ifndef LMC_LITE_BUILD
   pSettings->beginWriteArray(IDS_GROUPEXPHDR);
   for(int index = 0; index < ui.tvUserList->topLevelItemCount(); index++) {
     pSettings->setArrayIndex(index);
     pSettings->setValue(IDS_GROUP, ui.tvUserList->topLevelItem(index)->isExpanded());
   }
   pSettings->endArray();
+#endif
 
   pTrayIcon->hide();
 
@@ -200,9 +204,15 @@ void lmcMainWindow::addUser(User* pUser) {
   if(index != -1)
     pItem->setIcon(0, QIcon(QPixmap(statusPic[index], "PNG")));
 
+#ifdef LMC_LITE_BUILD
+  pItem->setSizeHint(0, QSize(0, itemViewHeight[ui.tvUserList->view()]));
+  ui.tvUserList->addTopLevelItem(pItem);
+  ui.tvUserList->sortItems(0, Qt::AscendingOrder);
+#else
   lmcUserTreeWidgetGroupItem* pGroupItem = (lmcUserTreeWidgetGroupItem*)getGroupItem(&pUser->group);
   pGroupItem->addChild(pItem);
   pGroupItem->sortChildren(0, Qt::AscendingOrder);
+#endif
 
   // this should be called after item has been added to tree
   setUserAvatar(&pUser->id, &pUser->avatarPath);
@@ -230,7 +240,10 @@ void lmcMainWindow::updateUser(User* pUser) {
     if(statusToolTip)
       pItem->setToolTip(0, lmcStrings::statusDesc()[index]);
     QTreeWidgetItem* pGroupItem = pItem->parent();
-    pGroupItem->sortChildren(0, Qt::AscendingOrder);
+    if(pGroupItem)
+      pGroupItem->sortChildren(0, Qt::AscendingOrder);
+    else
+      ui.tvUserList->sortItems(0, Qt::AscendingOrder);
   }
 }
 
@@ -239,8 +252,13 @@ void lmcMainWindow::removeUser(QString* lpszUserId) {
   if(!pItem)
     return;
 
+#ifdef LMC_LITE_BUILD
+  const std::unique_ptr<QTreeWidgetItem> removedItem(
+    ui.tvUserList->takeTopLevelItem(ui.tvUserList->indexOfTopLevelItem(pItem)));
+#else
   QTreeWidgetItem* pGroup = pItem->parent();
   pGroup->removeChild(pItem);
+#endif
 
   if(isHidden() || !isActiveWindow()) {
     QString msg = tr("%1 is offline.");
@@ -290,16 +308,11 @@ void lmcMainWindow::settingsChanged(bool init) {
   statusToolTip = pSettings->value(IDS_STATUSTOOLTIP, IDS_STATUSTOOLTIP_VAL).toBool();
   int viewType = pSettings->value(IDS_USERLISTVIEW, IDS_USERLISTVIEW_VAL).toInt();
   ui.tvUserList->setView((UserListView)viewType);
-  for(int index = 0; index < ui.tvUserList->topLevelItemCount(); index++) {
-    QTreeWidgetItem* item = ui.tvUserList->topLevelItem(index);
-    for(int childIndex = 0; childIndex < item->childCount(); childIndex++) {
-      QTreeWidgetItem* childItem = item->child(childIndex);
-      //			QSize itemSize = ui.tvUserList->view() == ULV_Detailed ? QSize(0, 36) : QSize(0, 20);
-      //			childItem->setSizeHint(0, itemSize);
-
-      QString toolTip = statusToolTip ? lmcStrings::statusDesc()[childItem->data(0, StatusRole).toInt()] : QString();
-      childItem->setToolTip(0, toolTip);
-    }
+  for(QTreeWidgetItemIterator item(ui.tvUserList); *item; ++item) {
+    if((*item)->data(0, TypeRole).toString() != "User")
+      continue;
+    QString toolTip = statusToolTip ? lmcStrings::statusDesc()[(*item)->data(0, StatusRole).toInt()] : QString();
+    (*item)->setToolTip(0, toolTip);
   }
   pSoundPlayer->settingsChanged();
   ui.lblUserName->setText(pLocalUser->name); // in case display name has been changed
@@ -441,7 +454,7 @@ void lmcMainWindow::avatarAction_triggered(void) {
 void lmcMainWindow::avatarBrowseAction_triggered(void) {
   QString dir = pSettings->value(IDS_OPENPATH, IDS_OPENPATH_VAL).toString();
   QString fileName = QFileDialog::getOpenFileName(this, tr("Select avatar picture"), dir,
-                                                  "Images (*.bmp *.gif *.jpg *.jpeg *.png *.tif *.tiff)");
+                                                  tr("Images (*.bmp *.gif *.jpg *.jpeg *.png *.tif *.tiff)"));
   if(!fileName.isEmpty()) {
     pSettings->setValue(IDS_OPENPATH, QFileInfo(fileName).dir().absolutePath());
     setAvatar(fileName);
@@ -541,6 +554,9 @@ void lmcMainWindow::tvUserList_itemContextMenu(QTreeWidgetItem* pItem, QPoint& p
 }
 
 void lmcMainWindow::tvUserList_itemDragDropped(QTreeWidgetItem* pItem) {
+#ifdef LMC_LITE_BUILD
+  Q_UNUSED(pItem);
+#else
   if(dynamic_cast<lmcUserTreeWidgetUserItem*>(pItem)) {
     QString szUserId = pItem->data(0, IdRole).toString();
     QString szMessage = pItem->parent()->data(0, IdRole).toString();
@@ -552,6 +568,7 @@ void lmcMainWindow::tvUserList_itemDragDropped(QTreeWidgetItem* pItem) {
     QString groupId = pItem->data(0, IdRole).toString();
     emit groupUpdated(GO_Move, groupId, index);
   }
+#endif
 }
 
 void lmcMainWindow::tvUserList_currentItemChanged(QTreeWidgetItem* pCurrent, QTreeWidgetItem* pPrevious) {
@@ -811,6 +828,12 @@ void lmcMainWindow::createGroupMenu(void) {
                                                  &lmcMainWindow::groupRenameAction_triggered);
   groupDeleteAction = ActionHelper::createAction(pGroupMenu, "&Delete This Group", this,
                                                  &lmcMainWindow::groupDeleteAction_triggered);
+#ifdef LMC_LITE_BUILD
+  for(QAction* action : pGroupMenu->actions()) {
+    action->setVisible(false);
+    action->setEnabled(false);
+  }
+#endif
 }
 
 void lmcMainWindow::createUserMenu(void) {
@@ -941,13 +964,11 @@ void lmcMainWindow::setUIText(void) {
   if(statusGroup->checkedAction())
     ui.lblStatus->setText(statusGroup->checkedAction()->text());
 
-  for(int index = 0; index < ui.tvUserList->topLevelItemCount(); index++) {
-    QTreeWidgetItem* item = ui.tvUserList->topLevelItem(index);
-    for(int childIndex = 0; childIndex < item->childCount(); childIndex++) {
-      QTreeWidgetItem* childItem = item->child(childIndex);
-      int statusIndex = childItem->data(0, StatusRole).toInt();
-      childItem->setToolTip(0, lmcStrings::statusDesc()[statusIndex]);
-    }
+  for(QTreeWidgetItemIterator item(ui.tvUserList); *item; ++item) {
+    if((*item)->data(0, TypeRole).toString() != "User")
+      continue;
+    int statusIndex = (*item)->data(0, StatusRole).toInt();
+    (*item)->setToolTip(0, lmcStrings::statusDesc()[statusIndex]);
   }
 
   setTrayTooltip();
@@ -962,6 +983,11 @@ void lmcMainWindow::showMinimizeMessage(void) {
 }
 
 void lmcMainWindow::initGroups(QList<Group>* pGroupList) {
+#ifdef LMC_LITE_BUILD
+  Q_UNUSED(pGroupList);
+  ui.tvUserList->setDragDropMode(QAbstractItemView::NoDragDrop);
+  ui.tvUserList->setRootIsDecorated(false);
+#else
   for(int index = 0; index < pGroupList->count(); index++) {
     lmcUserTreeWidgetGroupItem* pItem = new lmcUserTreeWidgetGroupItem();
     pItem->setData(0, IdRole, pGroupList->value(index).id);
@@ -980,6 +1006,7 @@ void lmcMainWindow::initGroups(QList<Group>* pGroupList) {
     ui.tvUserList->topLevelItem(index)->setExpanded(pSettings->value(IDS_GROUP).toBool());
   }
   pSettings->endArray();
+#endif
 }
 
 void lmcMainWindow::updateStatusImage(QTreeWidgetItem* pItem, QString* lpszStatus) {
@@ -1026,12 +1053,10 @@ void lmcMainWindow::setAvatar(QString fileName) {
 }
 
 QTreeWidgetItem* lmcMainWindow::getUserItem(QString* lpszUserId) {
-  for(int topIndex = 0; topIndex < ui.tvUserList->topLevelItemCount(); topIndex++) {
-    for(int index = 0; index < ui.tvUserList->topLevelItem(topIndex)->childCount(); index++) {
-      QTreeWidgetItem* pItem = ui.tvUserList->topLevelItem(topIndex)->child(index);
-      if(pItem->data(0, IdRole).toString().compare(*lpszUserId) == 0)
-        return pItem;
-    }
+  for(QTreeWidgetItemIterator item(ui.tvUserList); *item; ++item) {
+    if((*item)->data(0, TypeRole).toString() == "User" &&
+       (*item)->data(0, IdRole).toString() == *lpszUserId)
+      return *item;
   }
 
   return NULL;

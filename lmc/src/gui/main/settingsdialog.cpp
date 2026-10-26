@@ -82,7 +82,7 @@ void lmcSettingsDialog::init(void) {
   for(int index = 0; index < Application::availableLanguages().count(); index++) {
     QString langCode = Application::availableLanguages().value(index);
     QLocale locale(langCode);
-    QString language = QLocale::languageToString(locale.language());
+    QString language = langCode == "zh_CN" ? locale.nativeLanguageName() : QLocale::languageToString(locale.language());
     languages.insert(language, langCode);
   }
   for(int index = 0; index < languages.count(); index++)
@@ -223,7 +223,7 @@ void lmcSettingsDialog::rdbSysHistoryPath_toggled(bool checked) {
 
 void lmcSettingsDialog::btnHistoryPath_clicked(void) {
   QString historyPath = QFileDialog::getSaveFileName(this, tr("Save History"),
-                                                     ui.txtHistoryPath->text(), "Messenger DB (*.db)");
+                                                     ui.txtHistoryPath->text(), tr("Messenger DB (*.db)"));
   if(!historyPath.isEmpty())
     ui.txtHistoryPath->setText(historyPath);
 }
@@ -297,26 +297,26 @@ void lmcSettingsDialog::cboTheme_currentIndexChanged(int index) {
   QString userId = "Jack";
   QString userName = "Jack";
 
-  msg.addData(XN_MESSAGE, "Hello, this is an incoming message.");
+  msg.addData(XN_MESSAGE, tr("Hello, this is an incoming message."));
   pMessageLog->appendMessageLog(MT_Message, &userId, &userName, &msg, true);
 
   msg.removeData(XN_MESSAGE);
-  msg.addData(XN_MESSAGE, "Hello, this is a consecutive incoming message.");
+  msg.addData(XN_MESSAGE, tr("Hello, this is a consecutive incoming message."));
   pMessageLog->appendMessageLog(MT_Message, &userId, &userName, &msg, true);
 
   msg.removeData(XN_MESSAGE);
-  msg.addData(XN_BROADCAST, "This is a broadcast message!");
+  msg.addData(XN_BROADCAST, tr("This is a broadcast message!"));
   pMessageLog->appendMessageLog(MT_Broadcast, &userId, &userName, &msg, true);
 
   userId = "Myself";
-  userName = "Myself";
+  userName = tr("Myself");
 
   msg.removeData(XN_BROADCAST);
-  msg.addData(XN_MESSAGE, "Hi, this is an outgoing message.");
+  msg.addData(XN_MESSAGE, tr("Hi, this is an outgoing message."));
   pMessageLog->appendMessageLog(MT_Message, &userId, &userName, &msg, true);
 
   msg.removeData(XN_MESSAGE);
-  msg.addData(XN_MESSAGE, "Hi, this is a consecutive outgoing message.");
+  msg.addData(XN_MESSAGE, tr("Hi, this is a consecutive outgoing message."));
   pMessageLog->appendMessageLog(MT_Message, &userId, &userName, &msg, true);
 
   userId = "Jack";
@@ -338,7 +338,7 @@ void lmcSettingsDialog::cboTheme_currentIndexChanged(int index) {
   pMessageLog->appendMessageLog(MT_File, &userId, &userName, &fileMsg, bReload);
 
   msg.removeData(XN_MESSAGE);
-  msg.addData(XN_MESSAGE, "This is another incoming message.");
+  msg.addData(XN_MESSAGE, tr("This is another incoming message."));
   pMessageLog->appendMessageLog(MT_Message, &userId, &userName, &msg, true);
 
   killTimer(statusTimerId);
@@ -410,7 +410,7 @@ void lmcSettingsDialog::btnSoundPath_clicked(void) {
     return;
 
   QString soundPath = QFileDialog::getOpenFileName(this, tr("Select sound"),
-                                                   ui.lvSounds->currentItem()->data(Qt::UserRole).toString(), "Wave Files (*.wav)");
+                                                   ui.lvSounds->currentItem()->data(Qt::UserRole).toString(), tr("Wave Files (*.wav)"));
   if(!soundPath.isEmpty()) {
     ui.lvSounds->currentItem()->setData(Qt::UserRole, soundPath);
     lvSounds_currentRowChanged(ui.lvSounds->currentRow());
@@ -503,7 +503,7 @@ void lmcSettingsDialog::loadSettings(void) {
   ui.chkSingleClickTray->setChecked(pSettings->value(IDS_SINGLECLICKTRAY, IDS_SINGLECLICKTRAY_VAL).toBool());
   ui.chkSysTrayMsg->setChecked(pSettings->value(IDS_SYSTRAYMSG, IDS_SYSTRAYMSG_VAL).toBool());
   ui.chkAllowSysTrayMin->setChecked(pSettings->value(IDS_ALLOWSYSTRAYMIN, IDS_ALLOWSYSTRAYMIN_VAL).toBool());
-  QString langCode = pSettings->value(IDS_LANGUAGE, IDS_LANGUAGE_VAL).toString();
+  QString langCode = pSettings->language();
   for(int index = 0; index < ui.cboLanguage->count(); index++) {
     QString code = ui.cboLanguage->itemData(index, Qt::UserRole).toString();
     if(langCode.compare(code) == 0) {
@@ -607,7 +607,7 @@ void lmcSettingsDialog::saveSettings(void) {
   pSettings->setValue(IDS_SYSTRAYMSG, ui.chkSysTrayMsg->isChecked(), IDS_SYSTRAYMSG_VAL);
   pSettings->setValue(IDS_ALLOWSYSTRAYMIN, ui.chkAllowSysTrayMin->isChecked(), IDS_ALLOWSYSTRAYMIN_VAL);
   QString langCode = ui.cboLanguage->itemData(ui.cboLanguage->currentIndex(), Qt::UserRole).toString();
-  pSettings->setValue(IDS_LANGUAGE, langCode, IDS_LANGUAGE_VAL);
+  pSettings->setValue(IDS_LANGUAGE, langCode);
 
   pSettings->setValue(IDS_USERNAME, ui.txtUserName->text(), IDS_USERNAME_VAL);
   pSettings->setValue(IDS_USERFIRSTNAME, ui.txtFirstName->text(), IDS_USERFIRSTNAME_VAL);

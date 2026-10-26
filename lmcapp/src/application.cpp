@@ -23,6 +23,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QLocale>
 #include <QTranslator>
 #include "application.h"
 
@@ -112,8 +113,14 @@ const QStringList Application::availableLanguages() {
 	return QStringList(translators.keys());
 }
 
+QString Application::supportedLanguage(const QString& locale) {
+  const QString name = QLocale(locale).name();
+  return translators.contains(name) ? name : QStringLiteral(IDS_LANGUAGE_VAL);
+}
+
 void Application::setLanguage(const QString& locale) {
-	// remove previous translator
+  const QString language = supportedLanguage(locale);
+  // remove previous translator
 	if(current)
 		removeTranslator(current);
 	if(sysCurrent)
@@ -123,11 +130,11 @@ void Application::setLanguage(const QString& locale) {
 	// when multiple translators are included, translations are fetched
 	// in the reverse order. ie, last translator is searched first.
 	// install system translations first
-	sysCurrent = sysTranslators.value(locale, nullptr);
-	if(sysCurrent)
+  sysCurrent = sysTranslators.value(language, nullptr);
+  if(sysCurrent)
 		installTranslator(sysCurrent);
 	// now install application translations
-	current = translators.value(locale, nullptr);
-	if(current)
+  current = translators.value(language, nullptr);
+  if(current)
 		installTranslator(current);
 }

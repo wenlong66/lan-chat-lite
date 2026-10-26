@@ -25,6 +25,7 @@
 #include "core/trace.h"
 #include "messaging.h"
 #include <QDirIterator>
+#include <algorithm>
 
 void lmcMessaging::receiveProgress(QString* lpszUserId, QString* lpszData) {
   XmlMessage xmlMessage(*lpszData);
@@ -465,21 +466,31 @@ bool lmcMessaging::updateFileTransfer(FileMode fileMode, FileOp fileOp, QString*
 }
 
 QString lmcMessaging::getFreeFileName(QString fileName) {
+  const QDir dir(StdLocation::fileStorageDir());
+  const int dot = fileName.lastIndexOf('.');
+  const QString baseName = dot > 0 ? fileName.left(dot) : fileName;
+  const QString ext = dot > 0 ? fileName.mid(dot) : QString();
+
+  const auto inUse = [this, &dir](const QString& name) {
+    const QString path = QDir::cleanPath(dir.absoluteFilePath(name));
+    const QFileInfo info(path);
+    if(info.exists() || info.isSymLink())
+      return true;
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+    constexpr auto caseSensitivity = Qt::CaseInsensitive;
+#else
+    constexpr auto caseSensitivity = Qt::CaseSensitive;
+#endif
+    // QSaveFile destinations do not exist yet; accepted transfers reserve them.
+    return std::any_of(fileList.cbegin(), fileList.cend(), [&](const TransFile& transfer) {
+      return transfer.mode == FM_Receive &&
+             QDir::cleanPath(QDir::fromNativeSeparators(transfer.path)).compare(path, caseSensitivity) == 0;
+    });
+  };
+
   QString freeFileName = fileName;
-
-  QString fileDir = StdLocation::fileStorageDir();
-  QDir dir(fileDir);
-  QString filePath = dir.absoluteFilePath(fileName);
-  QString baseName = fileName.mid(0, fileName.lastIndexOf("."));
-  QString ext = fileName.mid(fileName.lastIndexOf("."));
-
-  int fileCount = 0;
-  while(QFile::exists(filePath)) {
-    fileCount++;
-    freeFileName = baseName + " [" + QString::number(fileCount) + "]" + ext;
-    filePath = dir.absoluteFilePath(freeFileName);
-  }
-
+  for(int fileCount = 1; inUse(freeFileName); ++fileCount)
+    freeFileName = baseName + "_" + QString::number(fileCount) + ext;
   return freeFileName;
 }
 

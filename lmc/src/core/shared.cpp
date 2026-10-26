@@ -29,6 +29,7 @@
 #else
 #include <stdlib.h>
 #endif
+#include <QCoreApplication>
 #include <QStringList>
 #include <QFile>
 #include <QStringConverter>
@@ -61,7 +62,7 @@ QString Helper::formatSize(qint64 size) {
   else if(size > kb)
     return QString("%1 KB").arg((double)size / kb, 0, 'f', 2);
   else
-    return QString("%1 bytes").arg(size);
+    return QCoreApplication::translate("Helper", "%1 bytes").arg(size);
 }
 
 QString Helper::getUuid(void) {

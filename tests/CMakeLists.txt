@@ -25,7 +25,11 @@ add_test(NAME crypto COMMAND tst_crypto)
 # no X server needed for headless crypto checks.
 set_tests_properties(crypto PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-foreach(test_name IN ITEMS clipboardimage filetransfer)
+set(LMC_REGRESSION_TESTS clipboardimage filetransfer filereceive translations)
+if(LMC_LITE_BUILD)
+    list(APPEND LMC_REGRESSION_TESTS contactgroups)
+endif()
+foreach(test_name IN LISTS LMC_REGRESSION_TESTS)
     add_executable(tst_${test_name} unit/tst_${test_name}.cpp)
     target_link_libraries(tst_${test_name} PRIVATE lmc_core Qt6::Test)
     set_target_properties(tst_${test_name} PROPERTIES
@@ -39,3 +43,12 @@ foreach(test_name IN ITEMS clipboardimage filetransfer)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 90)
 endforeach()
+
+target_sources(tst_translations PRIVATE ${CMAKE_SOURCE_DIR}/lmc/src/resource.qrc)
+target_compile_definitions(tst_translations PRIVATE
+    LMC_TRANSLATIONS_DIR="${CMAKE_BINARY_DIR}/lmc/runtime/lang"
+    LMC_CHINESE_TS="${CMAKE_SOURCE_DIR}/translations/lmc_zh_CN.ts")
+add_dependencies(tst_translations lmc_runtime_files)
+if(MSVC)
+    target_compile_options(tst_translations PRIVATE /utf-8)
+endif()

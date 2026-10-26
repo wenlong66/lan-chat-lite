@@ -92,11 +92,11 @@ void FileView::paint(QPainter* painter, const QRect& rect, const QPalette& palet
   QString stateDisplay;
   switch(state) {
   case TS_Send:
-    stateDisplay = timeDisplay + " left - " + posDisplay + " of " + sizeDisplay + " (" + speedDisplay + ")";
+    stateDisplay = tr("%1 left - %2 of %3 (%4)").arg(timeDisplay, posDisplay, sizeDisplay, speedDisplay);
     drawProgress = true;
     break;
   case TS_Receive:
-    stateDisplay = timeDisplay + " left - " + posDisplay + " of " + sizeDisplay + " (" + speedDisplay + ")";
+    stateDisplay = tr("%1 left - %2 of %3 (%4)").arg(timeDisplay, posDisplay, sizeDisplay, speedDisplay);
     drawProgress = true;
     break;
   case TS_Complete:

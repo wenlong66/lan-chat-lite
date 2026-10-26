@@ -3,6 +3,7 @@
 #ifndef CLIPBOARDIMAGE_H
 #define CLIPBOARDIMAGE_H
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QImage>
 #include <QImageWriter>
@@ -25,12 +26,12 @@ inline bool isWithinLimits(const QImage& image) {
 inline QString savePng(const QImage& image, const QString& directory, QString* error = nullptr) {
   if(!isWithinLimits(image)) {
     if(error)
-      *error = QStringLiteral("The image exceeds the clipboard attachment limit.");
+      *error = QCoreApplication::translate("ClipboardImage", "The image exceeds the clipboard attachment limit.");
     return QString();
   }
   if(!QDir(directory).exists()) {
     if(error)
-      *error = QStringLiteral("The temporary image folder is unavailable.");
+      *error = QCoreApplication::translate("ClipboardImage", "The temporary image folder is unavailable.");
     return QString();
   }
   const QString name = QStringLiteral("Screenshot-%1.png")

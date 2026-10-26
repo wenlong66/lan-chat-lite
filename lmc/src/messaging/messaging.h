@@ -175,6 +175,9 @@ private slots:
   void timer_timeout(void);
 
 private:
+  friend class TstFileReceive;
+  friend class TstContactGroups;
+
   QString createUserId(QString* lpszAddress, QString* lpszUserName);
   QString getUserName(void);
   void loadGroups(void);

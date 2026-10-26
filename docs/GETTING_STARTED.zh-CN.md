@@ -2,6 +2,8 @@
 
 版本定位：**0.1.0-alpha 开发预览版**。目标是 Windows 与 macOS 在同一局域网内发现设备、单聊、粘贴图片和传文件。代码从 LAN Messenger `v1.3.9`（`a4d364a384d5c8c615f443c062a77c00ca4412b2`）派生，保留 GPL 开源许可证与原作者署名。
 
+> **当前仅供测试**：2026-10-26 本地 `fix1` 修复同名接收与图标临时文件问题，并取消联系人分组；Windows Release 与 5/5 套 CTest 通过，详见[验证记录](VALIDATION.zh-CN.md)。此前旧包没有这些修复。不要在日常账户执行 `/noconfig` 烟测：该参数实际删除本应用配置和头像，还可能改写登录启动项；只能在独立测试账户或可丢弃虚拟机中使用。
+
 ## 1. 先取得两端的测试包
 
 打开本仓库的 **Actions → Build and test LanChat Lite**，选择对应提交且全部必要检查成功的一次运行。在页面底部 Artifacts 下载：
@@ -16,7 +18,9 @@ Artifacts 是开发构建，有保留期限；下载通常需要登录 GitHub。
 
 下载 Artifact 后先解压外层归档，再解压其中的 ZIP；同时提供 `.sha256` 校验值。Windows 包中运行 `lmc.exe`；Mac 包中的应用暂沿用 `LAN-Messenger.app` 文件名，界面为 LanChat Lite，保留文件名可减少上游打包路径变更。请将 Mac 应用放到独立测试目录，不覆盖已有的原版 LAN Messenger。
 
-Windows 首次启动若提示缺少 `VCRUNTIME` / `MSVCP`，先安装包内的 `vc_redist.x64.exe`（Microsoft Visual C++ x64 运行库），再启动应用。Qt 的部署工具在本次构建中附带这个安装程序；GitHub 的 Windows runner 已有 VC 运行库，因此包启动烟测仍不能代替全新 Windows 系统的验证。
+Windows 免安装包将 Microsoft Visual C++ x64 运行库 DLL 与 `lmc.exe` 放在同一目录，无需安装 Qt 或 VC 运行库。完整解压 ZIP 后直接运行 `lmc.exe`，必须保留 DLL、`platforms` 等随包目录，不能只复制单个 EXE，也不要直接从 ZIP 内运行。本地 `LanChat-Lite-0.1.0-alpha-fix1-windows-x64-portable` 使用重新编译的修复版 EXE，不覆盖此前旧包。已验证 5/5 套 CTest、清理开发环境后的帮助窗口显示及关闭，并确认 Qt/OpenSSL/CRT 从随包目录加载；这不代表完整聊天主窗口、干净系统或真实网络验收。修改后的打包 CI 尚未重跑。较早的 Actions 包仍是未修复版本，且只附有 `vc_redist.x64.exe`，若缺少 `VCRUNTIME` / `MSVCP`，仍需安装其运行库。
+
+本项目本次“绿色版”的范围仅为免安装，不要求数据随包便携或无痕运行：设置、记录、缓存仍保存在原有用户目录；默认隐藏到托盘并启用登录自启动。双击托盘图标显示主窗口。按本次要求保留这些行为，不新增 portable profile、启动器或设置重定向。
 
 测试包没有付费代码签名或 Apple 公证；Mac 打包步骤仅做运行所需的 ad-hoc 签名。如系统阻止首次打开，可在核对来源后按系统的“隐私与安全性”页面提示允许该应用。不要全局关闭系统安全检查。
 
@@ -31,6 +35,12 @@ Windows 首次启动若提示缺少 `VCRUNTIME` / `MSVCP`，先安装包内的 `
 7. 最后按 [测试计划](TEST_PLAN.zh-CN.md) 依次做大文件、批量文件和长时间常驻测试。
 
 本版图片走 PNG 文件附件，不承诺微信式的聊天内原图预览。默认精简模式隐藏广播和公共聊天室等入口；这些上游实现仍保留在代码中。
+
+### 界面语言
+
+重新构建的版本提供简体中文。打开 **工具（Tools）→ 首选项（Preferences）→ 常规（General）**，在语言下拉框选择 **简体中文**，点击确定；语言立即切换，下次启动保持选择。切回 English 的选择同样会保存，不会被中文系统重新覆盖。
+
+未保存语言选择时按系统区域选择已部署的语言（简体中文为 `zh_CN`），没有对应语言包时回退英文。语言包随构建部署到 `lang/zh_CN.qm`，Qt 标准按钮翻译位于 `lang/system/qtbase_zh_CN.qm`；不要只复制 EXE。本地 `LanChat-Lite-0.1.0-alpha-zh1-windows-x64-portable` 包含此次中文与 fix1 修复，旧 fix1 包保留不动。原有 `fix1` 包和旧 Actions 包不包含此次新增中文；Mac 需从本次源码重新构建，本轮未验证其界面。
 
 ### 发现不到对方怎么办
 
@@ -95,7 +105,11 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 ctest --test-dir build --output-on-failure --no-tests=error --timeout 90
 Remove-Item Env:QT_QPA_PLATFORM
 cmake --build build --target package-local
-& "$lanChatQt/bin/windeployqt.exe" --release build/release/lmc.exe
+& "$lanChatQt/bin/windeployqt.exe" --release --no-compiler-runtime build/release/lmc.exe
+if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed' }
+$lanChatCrt = Join-Path $env:VCToolsRedistDir 'x64/Microsoft.VC143.CRT'
+if (-not (Test-Path "$lanChatCrt/vcruntime140.dll")) { throw 'Visual C++ runtime not found' }
+Copy-Item "$lanChatCrt/*.dll" build/release/
 ```
 
 ### macOS：Apple clang＋Qt
