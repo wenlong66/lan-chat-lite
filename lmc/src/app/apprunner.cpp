@@ -72,9 +72,15 @@ int lmcRunApplication(int argc, char* argv[],
   QResource::registerResource(StdLocation::resourceFile());
 
   QApplication::setApplicationName(IDA_PRODUCT);
+  QApplication::setApplicationDisplayName(IDA_TITLE);
   QApplication::setOrganizationName(IDA_COMPANY);
   QApplication::setOrganizationDomain(QStringLiteral("wenlong66.github.io"));
   QApplication::setWindowIcon(QIcon(IDR_APPICON));
+#ifdef LMC_LITE_BUILD
+  QFile style(QStringLiteral(":/style/lite"));
+  if(style.open(QIODevice::ReadOnly))
+    application.setStyleSheet(QString::fromUtf8(style.readAll()));
+#endif
 
   application.loadTranslations(StdLocation::resLangDir());
   application.loadTranslations(StdLocation::sysLangDir());

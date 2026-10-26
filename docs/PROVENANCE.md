@@ -26,4 +26,8 @@ This protocol requires Lite peers. Do not claim compatibility with the original 
 
 ## Binary names
 
-The first alpha retains `lmc.exe`, `lan-messenger` and `LAN-Messenger.app` to reuse the upstream deployment scripts. UI and configuration identity are LanChat Lite. Packaging names and README distinguish these builds from upstream.
+Current Windows/macOS builds use `LanChatLite.exe` and `LanChat Lite.app` (bundle executable `LanChat Lite`). Display names, Windows version resources, macOS bundle metadata and packaging scripts use the Lite identity. The configuration keys and directories remain unchanged; Linux retains `lan-messenger`. Earlier alpha archives retain their original names.
+
+## Lite artwork and UI
+
+The SVG artwork in `lmc/src/resources/lite-icons/` was created for LanChat Lite in October 2026. The PNG, ICO and ICNS variants are generated from those original vectors, with no external icon pack or image service. These assets and `scripts/render-icons.cpp` are licensed GPL-3.0-or-later. The upstream artwork and copyright notices remain in the repository. See [branding notes](BRANDING.zh-CN.md) for regeneration and platform mapping.

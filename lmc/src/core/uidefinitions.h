@@ -271,7 +271,11 @@ enum UserListView {
 };
 
 #define ULV_COUNT 2
+#ifdef LMC_LITE_BUILD
+const int itemViewHeight[] = {64, 36};
+#else
 const int itemViewHeight[] = {36, 20};
+#endif
 
 #define RTL_LAYOUT "RTL"
 

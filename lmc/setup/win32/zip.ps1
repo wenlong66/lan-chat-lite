@@ -11,7 +11,7 @@ param(
 $src = Join-Path "..\.." $ExeFolder
 
 $items = @(
-	(Join-Path $src "lmc.exe"),
+	(Join-Path $src "LanChatLite.exe"),
 	(Join-Path $src "sounds"),
 	(Join-Path $src "lang"),
 	"..\..\src\resources\text\license.txt",

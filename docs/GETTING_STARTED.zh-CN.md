@@ -16,9 +16,9 @@
 
 Artifacts 是开发构建，有保留期限；下载通常需要登录 GitHub。若对应运行未完成或失败，不存在可用产物，应先查看失败日志。仓库中的 CI 配置不代表 Windows/Mac 构建已经实际通过。
 
-下载 Artifact 后先解压外层归档，再解压其中的 ZIP；同时提供 `.sha256` 校验值。Windows 包中运行 `lmc.exe`；Mac 包中的应用暂沿用 `LAN-Messenger.app` 文件名，界面为 LanChat Lite，保留文件名可减少上游打包路径变更。请将 Mac 应用放到独立测试目录，不覆盖已有的原版 LAN Messenger。
+下载 Artifact 后先解压外层归档，再解压其中的 ZIP；同时提供 `.sha256` 校验值。新构建的 Windows 包中运行 `LanChatLite.exe`；Mac 包中的应用为 `LanChat Lite.app`。两端使用同一套 LanChat Lite 名称和双气泡图标，旧版包不会自动更新。请将 Mac 应用放到独立测试目录，不覆盖已有的原版 LAN Messenger。
 
-Windows 免安装包将 Microsoft Visual C++ x64 运行库 DLL 与 `lmc.exe` 放在同一目录，无需安装 Qt 或 VC 运行库。完整解压 ZIP 后直接运行 `lmc.exe`，必须保留 DLL、`platforms` 等随包目录，不能只复制单个 EXE，也不要直接从 ZIP 内运行。本地 `LanChat-Lite-0.1.0-alpha-fix1-windows-x64-portable` 使用重新编译的修复版 EXE，不覆盖此前旧包。已验证 5/5 套 CTest、清理开发环境后的帮助窗口显示及关闭，并确认 Qt/OpenSSL/CRT 从随包目录加载；这不代表完整聊天主窗口、干净系统或真实网络验收。修改后的打包 CI 尚未重跑。较早的 Actions 包仍是未修复版本，且只附有 `vc_redist.x64.exe`，若缺少 `VCRUNTIME` / `MSVCP`，仍需安装其运行库。
+Windows 免安装包将 Microsoft Visual C++ x64 运行库 DLL 与 `LanChatLite.exe` 放在同一目录，无需安装 Qt 或 VC 运行库。完整解压 ZIP 后直接运行 `LanChatLite.exe`，必须保留 DLL、`platforms` 等随包目录，不能只复制单个 EXE，也不要直接从 ZIP 内运行。本地 `LanChat-Lite-0.1.0-alpha-fix1-windows-x64-portable` 使用重新编译的修复版 EXE，不覆盖此前旧包。已验证 5/5 套 CTest、清理开发环境后的帮助窗口显示及关闭，并确认 Qt/OpenSSL/CRT 从随包目录加载；这不代表完整聊天主窗口、干净系统或真实网络验收。修改后的打包 CI 尚未重跑。较早的 Actions 包仍是未修复版本，且只附有 `vc_redist.x64.exe`，若缺少 `VCRUNTIME` / `MSVCP`，仍需安装其运行库。
 
 本项目本次“绿色版”的范围仅为免安装，不要求数据随包便携或无痕运行：设置、记录、缓存仍保存在原有用户目录；默认隐藏到托盘并启用登录自启动。双击托盘图标显示主窗口。按本次要求保留这些行为，不新增 portable profile、启动器或设置重定向。
 
@@ -105,7 +105,7 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 ctest --test-dir build --output-on-failure --no-tests=error --timeout 90
 Remove-Item Env:QT_QPA_PLATFORM
 cmake --build build --target package-local
-& "$lanChatQt/bin/windeployqt.exe" --release --no-compiler-runtime build/release/lmc.exe
+& "$lanChatQt/bin/windeployqt.exe" --release --no-compiler-runtime build/release/LanChatLite.exe
 if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed' }
 $lanChatCrt = Join-Path $env:VCToolsRedistDir 'x64/Microsoft.VC143.CRT'
 if (-not (Test-Path "$lanChatCrt/vcruntime140.dll")) { throw 'Visual C++ runtime not found' }
@@ -132,7 +132,7 @@ cd lmc/setup/mac
 QTDIR="$LCHAT_QT" bash ./stage-mac-app
 ```
 
-此脚本会将 Qt 依赖放入 `.app` 并做本地 ad-hoc 签名。最终可运行的包是 `lmc/setup/mac/LAN-Messenger.app`。在对应架构的 Mac 上构建即可；首版不生成 Universal 合并包。
+此脚本会将 Qt 依赖放入 `.app` 并做本地 ad-hoc 签名。最终可运行的包是 `lmc/setup/mac/LanChat Lite.app`。在对应架构的 Mac 上构建即可；首版不生成 Universal 合并包。
 
 ## 5. 如何继续交给 Codex 开发
 

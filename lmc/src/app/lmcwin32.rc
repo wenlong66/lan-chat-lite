@@ -1,6 +1,6 @@
 #include <windows.h>
 
-IDI_MAIN_ICON   ICON    DISCARDABLE "lmc.ico"
+IDI_MAIN_ICON   ICON    DISCARDABLE "application.ico"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION	0,1,0,0
@@ -25,7 +25,7 @@ FILESUBTYPE     0x0L
             VALUE "FileVersion",      "0.1.0-alpha\0"
             VALUE "InternalName",     "LanChatLite\0"
             VALUE "LegalCopyright",   "Copyright (C) 2010-2012 Qualia Digital Solutions.\0"
-            VALUE "OriginalFilename", "lmc.exe\0"
+            VALUE "OriginalFilename", "LanChatLite.exe\0"
             VALUE "ProductName",      "LanChat Lite\0"
             VALUE "ProductVersion",   "0.1.0-alpha\0"
         }

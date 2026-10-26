@@ -32,19 +32,19 @@ SetCompressor /SOLID lzma
 ;------------------------------------------------------------------------------
 ;Constants
   
-  !define ProductName "LAN Messenger"
-  !define CompanyName "LAN Messenger"
+  !define ProductName "LanChat Lite"
+  !define CompanyName "wenlong66"
   !ifndef ProductVersion
-    !define ProductVersion "1.2.39"
+    !define ProductVersion "0.1.0-alpha"
   !endif
   !ifndef InstallerVersion
-    !define InstallerVersion "1.2.3.9"
+    !define InstallerVersion "0.1.0.0"
   !endif
-  !define ProductUrl "http://lanmessenger.github.io"
+  !define ProductUrl "https://github.com/wenlong66/lan-chat-lite"
   !define CompanyRegKey "SOFTWARE\${CompanyName}"
   !define AppRegKey "${CompanyRegKey}\${ProductName}"
   !define UninstKey "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\${ProductName}"
-  !define AppExec "lmc.exe"
+  !define AppExec "LanChatLite.exe"
   !define Uninstaller "uninst.exe"
   !define CompanyDataDir "$LOCALAPPDATA\${CompanyName}"
   !define AppDataDir "${CompanyDataDir}\${ProductName}"
@@ -58,7 +58,7 @@ SetCompressor /SOLID lzma
   ;Name and file
   Name "${ProductName}"
   BrandingText $BrandText
-  OutFile "lmc-${ProductVersion}-win64.exe"
+  OutFile "LanChat-Lite-${ProductVersion}-windows-x64.exe"
 
   ;Default installation folder
   InstallDir "$PROGRAMFILES\${ProductName}"
@@ -76,8 +76,8 @@ SetCompressor /SOLID lzma
 ;------------------------------------------------------------------------------
 ;Interface Settings
 
-  !define MUI_ICON "package\images\setup.ico"
-  !define MUI_UNICON "package\images\setup.ico"
+  !define MUI_ICON "..\..\src\resources\lite-icons\application.ico"
+  !define MUI_UNICON "..\..\src\resources\lite-icons\application.ico"
   !define MUI_HEADERIMAGE
   !define MUI_HEADERIMAGE_BITMAP "package\images\header-r.bmp"
   !define MUI_HEADERIMAGE_UNBITMAP "package\images\header-r.bmp"

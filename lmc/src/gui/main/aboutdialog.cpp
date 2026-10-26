@@ -71,7 +71,7 @@ void lmcAboutDialog::setUIText(void) {
   setWindowTitle(title.arg(lmcStrings::appName()));
 
   ui.lblTitle->setText(lmcStrings::appName() + "\n" IDA_VERSION);
-  ui.lblLogoSmall->setPixmap(QPixmap(IDR_LOGOSMALL));
+  ui.lblLogoSmall->setPixmap(QIcon(IDR_APPICON).pixmap(64, 64));
 #if defined(QT_NO_DEBUG)
 #define DEBUGINFO " "
 #else

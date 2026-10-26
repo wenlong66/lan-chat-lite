@@ -52,6 +52,20 @@ bool isClipboardAttachment(const QString& path) {
 lmcChatWindow::lmcChatWindow(QWidget* parent, Qt::WindowFlags flags)
     : QWidget(parent, flags) {
   ui.setupUi(this);
+#ifdef LMC_LITE_BUILD
+  resize(620, 560);
+  setMinimumSize(440, 360);
+  ui.verticalLayout_4->setContentsMargins(12, 8, 12, 12);
+  ui.wgtToolBar->setMinimumHeight(44);
+  ui.wgtToolBar->setMaximumHeight(QWIDGETSIZE_MAX);
+  ui.txtMessage->setMinimumHeight(100);
+  ui.msgRowLayout->setSpacing(8);
+  ui.btnSend->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+  ui.btnSend->setFocusPolicy(Qt::StrongFocus);
+  ui.msgRowLayout->setAlignment(ui.btnSend, Qt::AlignBottom);
+  ui.lblDividerTop->hide();
+  ui.lblDividerBottom->hide();
+#endif
   //	Destroy the window when it closes
   setAttribute(Qt::WA_DeleteOnClose, true);
   setAcceptDrops(true);
@@ -67,7 +81,9 @@ lmcChatWindow::lmcChatWindow(QWidget* parent, Qt::WindowFlags flags)
   sizes.append(height() - bottomPanelHeight - ui.splitter->handleWidth());
   sizes.append(bottomPanelHeight);
   ui.splitter->setSizes(sizes);
+#ifndef LMC_LITE_BUILD
   ui.splitter->setStyleSheet("QSplitter::handle { image: url(" IDR_VGRIP "); }");
+#endif
 
   ui.lblInfo->setBackgroundRole(QPalette::Base);
   ui.lblInfo->setAutoFillBackground(true);
@@ -281,6 +297,8 @@ void lmcChatWindow::settingsChanged(void) {
   pMessageLog->fontSizeVal = pSettings->value(IDS_FONTSIZE, IDS_FONTSIZE_VAL).toInt();
   pMessageLog->autoFile = pSettings->value(IDS_AUTOFILE, IDS_AUTOFILE_VAL).toBool();
   sendKeyMod = pSettings->value(IDS_SENDKEYMOD, IDS_SENDKEYMOD_VAL).toBool();
+  ui.btnSend->setToolTip(tr("Send message") + QStringLiteral(" (%1)").arg(
+      QKeySequence(sendKeyMod ? Qt::CTRL | Qt::Key_Return : Qt::Key_Return).toString(QKeySequence::NativeText)));
   clearOnClose = pSettings->value(IDS_CLEARONCLOSE, IDS_CLEARONCLOSE_VAL).toBool();
   showSendButton = pSettings->value(IDS_SHOWSENDBUTTON, IDS_SHOWSENDBUTTON_VAL).toBool();
   ui.btnSend->setVisible(showSendButton);
@@ -638,6 +656,13 @@ void lmcChatWindow::createToolBar(void) {
   ui.lblDividerBottom->setAutoFillBackground(true);
 
 #ifdef LMC_LITE_BUILD
+  pLeftBar->setIconSize(QSize(20, 20));
+  pRightBar->setIconSize(QSize(20, 20));
+  pLeftBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+  for(QToolBar* bar : {pLeftBar, pRightBar}) {
+    for(auto* button : bar->findChildren<QToolButton*>())
+      button->setFocusPolicy(Qt::StrongFocus);
+  }
   // Keep the conversation toolbar focused on file transfer and history. The
   // actions still exist so language changes and upstream code remain valid.
   pFontAction->setVisible(false);
@@ -676,6 +701,13 @@ void lmcChatWindow::setUIText(void) {
   ui.btnSend->setText(tr("Send"));
   ui.btnSend->setToolTip(tr("Send message"));
   ui.txtMessage->setPlaceholderText(tr("Type a message, or paste an image..."));
+  ui.txtMessage->setAccessibleName(tr("Send message"));
+#ifdef LMC_LITE_BUILD
+  pFileAction->setIconText(tr("File"));
+  pFolderAction->setIconText(tr("Folder"));
+  ui.btnSend->setToolTip(tr("Send message") + QStringLiteral(" (%1)").arg(
+      QKeySequence(sendKeyMod ? Qt::CTRL | Qt::Key_Return : Qt::Key_Return).toString(QKeySequence::NativeText)));
+#endif
   pFontAction->setText(tr("Change Font..."));
   pFontAction->setToolTip(tr("Change message font"));
   pFontColorAction->setText(tr("Change Color..."));

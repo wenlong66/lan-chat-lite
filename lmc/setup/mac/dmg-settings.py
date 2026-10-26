@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""dmgbuild settings for the LAN-Messenger macOS disk image.
+"""dmgbuild settings for the LanChat Lite macOS disk image.
 
 Builds the distributable dmg in one step: app bundle, Applications
 symlink, Finder window layout (icon positions, background picture)
@@ -10,7 +10,7 @@ Finder, so the detach/convert flake class of the old
 createdisk+addlicense scripts cannot occur here.
 
 Usage (from lmc/setup/mac, after stage-mac-app prepared the bundle):
-    dmgbuild -s dmg-settings.py "LAN-Messenger" "../lmc_<ver>_<arch>.dmg"
+    dmgbuild -s dmg-settings.py "LanChat Lite" "../lmc_<ver>_<arch>.dmg"
 """
 import os
 
@@ -19,16 +19,16 @@ import os
 # Must be run from lmc/setup/mac, as documented above and in CI.
 MACDIR = os.getcwd()
 
-volume_name = 'LAN-Messenger'
+volume_name = 'LanChat Lite'
 format = 'UDBZ'
 filesystem = 'HFS+'
 
-files = [os.path.join(MACDIR, 'LAN-Messenger.app')]
+files = [os.path.join(MACDIR, 'LanChat Lite.app')]
 symlinks = {'Applications': '/Applications'}
 
 # Former createdisk osascript layout, now declarative.
 icon_locations = {
-    'LAN-Messenger.app': (160, 205),
+    'LanChat Lite.app': (160, 205),
     'Applications': (360, 205),
 }
 icon_size = 72

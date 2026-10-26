@@ -1146,6 +1146,14 @@ Copyright (C) 2010-2012 Qualia Digital Solutions.
 <context>
     <name>lmcChatWindow</name>
     <message>
+        <source>File</source>
+        <translation>文件</translation>
+    </message>
+    <message>
+        <source>Folder</source>
+        <translation>文件夹</translation>
+    </message>
+    <message>
         <location filename="../lmc/src/gui/chat/chatwindow.cpp" line="661"/>
         <source>Insert Smiley</source>
         <translation>插入表情</translation>
@@ -2105,6 +2113,15 @@ Derived from LAN Messenger. No account or central server required.</source>
         <location filename="../lmc/src/gui/contacts/userselectdialog.cpp" line="133"/>
         <source>Select Contacts</source>
         <translation>选择联系人</translation>
+    </message>
+</context>
+<context>
+    <name>lmcUserTreeWidget</name>
+    <message>
+        <source>No devices yet
+Open LanChat Lite on another computer on the same network.</source>
+        <translation>暂未发现设备
+请在同一局域网的另一台电脑上打开 LanChat Lite。</translation>
     </message>
 </context>
 </TS>

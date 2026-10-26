@@ -86,6 +86,7 @@ signals:
   void itemContextMenu(QTreeWidgetItem* item, QPoint& pos);
 
 protected:
+  void paintEvent(QPaintEvent* event);
   void mousePressEvent(QMouseEvent* event);
   void dragMoveEvent(QDragMoveEvent* event);
   void dropEvent(QDropEvent* event);

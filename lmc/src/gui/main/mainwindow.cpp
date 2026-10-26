@@ -36,6 +36,18 @@
 lmcMainWindow::lmcMainWindow(QWidget* parent, Qt::WindowFlags flags)
     : QWidget(parent, flags) {
   ui.setupUi(this);
+#ifdef LMC_LITE_BUILD
+  resize(360, 560);
+  setMinimumSize(320, 400);
+  ui.frame->setFixedHeight(88);
+  ui.horizontalLayout_2->setContentsMargins(12, 12, 12, 12);
+  ui.infoLayout->setSpacing(4);
+  ui.txtNote->setMaximumHeight(QWIDGETSIZE_MAX);
+  ui.btnAvatar->setIconSize(QSize(40, 40));
+  ui.btnAvatar->setFocusPolicy(Qt::StrongFocus);
+  ui.lblDividerTop->hide();
+  ui.tvUserList->setMouseTracking(true);
+#endif
 
   connect(ui.tvUserList, &QTreeWidget::itemActivated,
           this, &lmcMainWindow::tvUserList_itemActivated);
@@ -864,6 +876,10 @@ void lmcMainWindow::createToolBar(void) {
   QAction* pStatusAction = pStatusBar->addAction("");
   btnStatus = (QToolButton*)pStatusBar->widgetForAction(pStatusAction);
   btnStatus->setPopupMode(QToolButton::MenuButtonPopup);
+#ifdef LMC_LITE_BUILD
+  btnStatus->setPopupMode(QToolButton::InstantPopup);
+#endif
+  btnStatus->setFocusPolicy(Qt::StrongFocus);
 
   QToolBar* pToolBar = new QToolBar(ui.wgtToolBar);
   pToolBar->setIconSize(QSize(40, 20));
@@ -901,6 +917,12 @@ void lmcMainWindow::createToolBar(void) {
   pButton = (QToolButton*)pToolBar->widgetForAction(toolPublicChatAction);
   pButton->setAutoRaise(false);
 #ifdef LMC_LITE_BUILD
+  pToolBar->setIconSize(QSize(20, 20));
+  pToolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+  for(QAction* action : {toolChatAction, toolFileAction}) {
+    auto* button = qobject_cast<QToolButton*>(pToolBar->widgetForAction(action));
+    button->setFocusPolicy(Qt::StrongFocus);
+  }
   toolBroadcastAction->setVisible(false);
   toolBroadcastAction->setEnabled(false);
   toolChatRoomAction->setVisible(false);
@@ -961,6 +983,10 @@ void lmcMainWindow::setUIText(void) {
     statusGroup->actions()[index]->setText(lmcStrings::statusDesc()[index]);
 
   ui.lblUserName->setText(pLocalUser->name); // in case of retranslation
+  ui.tvUserList->setAccessibleName(ui.tvUserList->headerItem()->text(0));
+  ui.txtNote->setAccessibleName(ui.txtNote->placeholderText());
+  ui.btnAvatar->setAccessibleName(ui.btnAvatar->toolTip());
+  btnStatus->setAccessibleName(tr("&Change Status").remove('&'));
   if(statusGroup->checkedAction())
     ui.lblStatus->setText(statusGroup->checkedAction()->text());
 

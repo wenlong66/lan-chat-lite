@@ -566,3 +566,56 @@ ZIP SHA-256：
 ```text
 05d16113e2476dc02b6a28d3b2e10e09a85021852424f2d2f5afd8b79c3e0d7e
 ```
+
+## 2026-10-27：UI 与 Windows/macOS 品牌统一（ui1）
+
+基于 `2bdfef3` 的本地工作区修改。环境：macOS 26.7 (25G229)、arm64、Apple clang 21.0.0、Qt 6.8.3、Release，`LMC_LITE_BUILD=ON`；生产测试代理及 LMM 均关闭。沿用上一轮已配置的 Qt/OpenSSL SDK。
+
+### 改动范围
+
+- 联系人主窗口采用更清晰的资料区、带文字的工具按钮、64/36 px 详略列表、选中/键盘焦点样式和无设备提示。
+- 聊天窗口增加输入区留白与发送按钮层级，支持 Tab 聚焦、空格发送，工具栏显示文件/文件夹文字与同风格图标；Classic 聊天记录移除旧蓝色横线。
+- 原创 SVG 生成 PNG、七尺寸 ICO 和最高 1024 px ICNS。Windows 文件、版本资源、打包脚本统一为 `LanChatLite.exe`；Mac bundle/可执行文件为 `LanChat Lite.app` / `LanChat Lite`；应用显示名称均为 LanChat Lite。配置身份与原作者署名保持不变。
+- Windows/macOS CI 路径、NSIS 元数据和使用文档已同步；本节记录本地验证结果，提交推送后的远端 CI 状态以 Actions 为准。
+
+### 执行与结果
+
+以下命令使用本地已配置的 CMake/Ninja 可执行文件；Qt 在默认沙箱中存在前轮记录的 CPU 检测问题，本轮构建、测试与 GUI 核验在沙箱外执行。
+
+```bash
+cmake -S . -B build-macos-arm64 -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DLMC_VERSION=0.1.0-alpha -DLMC_LITE_BUILD=ON \
+  -DLMC_BUILD_TEST_AGENT=OFF -DLMC_BUILD_LMM=OFF -DBUILD_TESTING=ON
+cmake --build build-macos-arm64 --parallel 2
+QT_QPA_PLATFORM=offscreen ctest --test-dir build-macos-arm64 \
+  --output-on-failure --no-tests=error --timeout 90
+cmake --build build-macos-arm64 --target package-local
+```
+
+- 最终 Release 构建通过；CTest **6/6 通过，10.14 秒**：crypto、clipboardimage、filetransfer、filereceive、translations、contactgroups。
+- 简体中文 QM 为 **387 finished / 0 unfinished**。
+- 临时 UI harness 直接链接生产 `lmc_core` 与相同资源，使用独立 QSettings、测试数据路径和合成联系人，不初始化网络。检查中文/英文即时切换、长联系人名、空列表、主窗口 320×400、聊天 440×360、空格发送、输入清空与多尺寸应用图标，全部通过。它只验证控件与发送信号，不代表网络收发。
+- 使用 `QT_QPA_PLATFORM=offscreen` 的 Fusion 浅色/深色调色板、`QT_SCALE_FACTOR=2` 与原生 `cocoa` 分别渲染并检查截图。截图、harness、构建和测试日志位于忽略目录 `artifacts/ui-check/`。这些是 Mac 上的渲染结果，不是 Windows 实机截图。
+- Mac 打包脚本部署 Qt 并 ad-hoc 签名成功；`codesign --verify --deep --strict` 通过。34 个 Mach-O 文件均含 arm64，非系统依赖在包内存在，无 Homebrew/Qt SDK 绝对链接路径；plist 名称和包内 ICNS 与源资源一致。
+- 清理 Qt/DYLD 开发环境、将 PATH 限为系统目录后，最终包执行只读 `/inst` 返回 0、stderr 为空。未执行 `/noconfig`、未启动真实网络会话，未修改登录项或系统安全设置。
+- `git diff --check`、Mac 脚本语法检查、QRC 全部资源路径检查及七尺寸 ICO 结构/PNG 数据检查通过。
+
+### 过程中的失败与修正
+
+- Context7 CLI 在沙箱外返回 `fetch failed`，改查 Qt 官方样式表、应用图标与高 DPI 文档，链接见 `BRANDING.zh-CN.md`。
+- 图标生成工具首次编译因 Qt 头文件缺少 `__yield` 声明失败，编译参数加入 `-include arm_acle.h` 后成功，不修改 SDK 或生产源文件。
+- 初次截图发现资料区被布局拉高、状态按钮有多余分割区，已限制资料区高度并使用整按钮状态菜单，再次渲染通过。
+- 首版临时依赖审计把 `otool -L` 输出的文件标题误判为绝对依赖，改为仅解析依赖行后复核通过。
+- 原生 Cocoa harness 出现一次 `IMKCFRunLoopWakeUpReliable` 系统日志，所有交互断言通过并正常退出；offscreen 有既有 `Sans Serif` 字体别名警告，无 Qt 样式解析错误。
+
+### 测试包与边界
+
+本机独立测试目录为 `dist/LanChat-Lite-0.1.0-alpha-ui1-macos-arm64/`，应用名 `LanChat Lite.app`。旧 zh2 包保留。Windows/macOS 都需要重新构建才能取得新版 UI 与图标，旧包不会自动变化。
+
+Windows 本轮构建、真实 Explorer/任务栏图标、Windows DPI/主题切换、Intel Mac、真实双机聊天/传输、睡眠恢复和长期常驻均未验证。此次未改动网络或文件传输所有权，因此未额外执行 ASan/UBSan。Mac 包为本地 ad-hoc 签名，无 Apple 公证。
+
+ui1 ZIP 最终核验：`dist/LanChat-Lite-0.1.0-alpha-ui1-macos-arm64.zip` 为 **46,430,312 bytes**，170 个文件/符号链接；CRC、解压后逐文件 SHA-256/符号链接一致性、执行权限及签名均通过。包内验证文档为压缩前快照。外部 `.sha256` 已生成，核验详情见 `artifacts/ui-check/package-result.json`。
+
+```text
+02addc848d9898713ee65c2bfbccd1daccfbbdaacfae148fe228e6177ce0f2b5
+```

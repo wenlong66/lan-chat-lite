@@ -119,7 +119,7 @@ jobs:
         run: |
           cmake --build build --target package-local
           if ($LASTEXITCODE -ne 0) { throw "Application staging failed" }
-          windeployqt --release --no-compiler-runtime lmc/release/lmc.exe
+          windeployqt --release --no-compiler-runtime lmc/release/LanChatLite.exe
           if ($LASTEXITCODE -ne 0) { throw "Qt deployment failed" }
           $crt = Join-Path $env:VCToolsRedistDir 'x64/Microsoft.VC143.CRT'
           if (-not (Test-Path "$crt/vcruntime140.dll")) {
@@ -147,7 +147,7 @@ jobs:
               env.pop(key, None)
           system = Path(env['SYSTEMROOT'])
           env['PATH'] = os.pathsep.join(map(str, (runtime, system / 'System32', system)))
-          subprocess.run([str(runtime / 'lmc.exe'), '/loopback', '/noconfig', '/quit'],
+          subprocess.run([str(runtime / 'LanChatLite.exe'), '/loopback', '/noconfig', '/quit'],
                          cwd=runtime, env=env, check=True, timeout=30)
       - name: Pack Windows alpha archive
         shell: pwsh
@@ -223,8 +223,8 @@ jobs:
           export QTDIR="$QT_ROOT_DIR"
           cd lmc/setup/mac
           bash ./stage-mac-app
-          lipo LAN-Messenger.app/Contents/MacOS/LAN-Messenger -verify_arch ${{ matrix.arch }}
-          codesign --verify --deep --strict LAN-Messenger.app
+          lipo "LanChat Lite.app/Contents/MacOS/LanChat Lite" -verify_arch ${{ matrix.arch }}
+          codesign --verify --deep --strict "LanChat Lite.app"
       - name: Smoke test packaged app
         run: |
           python3 - <<'PY'
@@ -237,14 +237,14 @@ jobs:
               env.pop(key, None)
           env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin'
           subprocess.run([
-              'lmc/setup/mac/LAN-Messenger.app/Contents/MacOS/LAN-Messenger',
+              'lmc/setup/mac/LanChat Lite.app/Contents/MacOS/LanChat Lite',
               '/loopback', '/noconfig', '/quit',
           ], env=env, check=True, timeout=30)
           PY
       - name: Pack alpha app
         run: |
           mkdir -p macos-package
-          cp -R lmc/setup/mac/LAN-Messenger.app macos-package/
+          cp -R "lmc/setup/mac/LanChat Lite.app" macos-package/
           cp LICENSE docs/GETTING_STARTED.zh-CN.md docs/TEST_PLAN.zh-CN.md macos-package/
           ditto -c -k --sequesterRsrc --keepParent macos-package LanChat-Lite-macos-${{ matrix.arch }}.zip
           shasum -a 256 LanChat-Lite-macos-${{ matrix.arch }}.zip > LanChat-Lite-macos-${{ matrix.arch }}.sha256

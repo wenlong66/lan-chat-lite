@@ -1,0 +1,40 @@
+/* LanChat Lite: keep native palettes and window chrome on both platforms. */
+QWidget#MainWindow, QWidget#ChatWindow { background: palette(base); }
+QWidget#MainWindow QFrame#frame { background: palette(window); }
+QWidget#MainWindow QLabel#lblStatus { color: palette(text); }
+QWidget#MainWindow QLineEdit#txtNote {
+    border: 1px solid transparent; border-radius: 4px; padding: 4px;
+    background: transparent; color: palette(text);
+}
+QWidget#MainWindow QLineEdit#txtNote:focus { border-color: #168578; background: palette(base); }
+QWidget#MainWindow QTreeWidget { border: 0; padding: 8px; }
+QWidget#MainWindow QToolBar, QWidget#ChatWindow QToolBar {
+    border: 0; spacing: 4px; padding: 4px; background: transparent;
+}
+QWidget#MainWindow QToolButton, QWidget#ChatWindow QToolButton {
+    border: 1px solid transparent; border-radius: 6px; padding: 6px;
+    color: palette(button-text); background: transparent;
+}
+QWidget#MainWindow QToolButton:hover, QWidget#ChatWindow QToolButton:hover {
+    background: palette(midlight);
+}
+QWidget#MainWindow QToolButton:pressed, QWidget#ChatWindow QToolButton:pressed {
+    background: palette(button);
+}
+QWidget#MainWindow QToolButton:focus, QWidget#ChatWindow QToolButton:focus { border-color: #168578; }
+QWidget#MainWindow QToolButton:disabled, QWidget#ChatWindow QToolButton:disabled { color: palette(mid); }
+QWidget#ChatWindow QTextBrowser { border: 0; padding: 8px; background: palette(base); }
+QWidget#ChatWindow QTextEdit#txtMessage {
+    border: 1px solid palette(mid); border-radius: 8px; padding: 8px; background: palette(base);
+}
+QWidget#ChatWindow QTextEdit#txtMessage:focus { border-color: #168578; }
+QWidget#ChatWindow QPushButton#btnSend {
+    background: #087f72; color: white; border: 2px solid transparent;
+    border-radius: 8px; padding: 8px 16px; font-weight: bold;
+}
+QWidget#ChatWindow QPushButton#btnSend:hover { background: #066b60; }
+QWidget#ChatWindow QPushButton#btnSend:pressed { background: #04554c; }
+QWidget#ChatWindow QPushButton#btnSend:focus { border-color: palette(text); }
+QWidget#ChatWindow QPushButton#btnSend:disabled { background: palette(button); color: palette(mid); }
+QWidget#ChatWindow QLabel#lblInfo { padding: 8px; background: palette(window); color: palette(text); }
+QWidget#ChatWindow QSplitter::handle { background: palette(window); }

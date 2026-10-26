@@ -1,21 +1,24 @@
 <RCC>
+    <qresource prefix="/style">
+        <file alias="lite">resources/lite.qss</file>
+    </qresource>
     <qresource prefix="/icons">
-        <file alias="application">resources/icons/lmc.ico</file>
+        <file alias="application">resources/lite-icons/application.ico</file>
     </qresource>
     <qresource prefix="/icons/bubbles">
-        <file alias="away">resources/icons/awaybubble.ico</file>
-        <file alias="busy">resources/icons/busybubble.ico</file>
-        <file alias="nodisturb">resources/icons/nodisturbbubble.ico</file>
-        <file alias="offline">resources/icons/offlinebubble.ico</file>
-        <file alias="online">resources/icons/onlinebubble.ico</file>
+        <file alias="away">resources/lite-icons/away-tray.ico</file>
+        <file alias="busy">resources/lite-icons/busy-tray.ico</file>
+        <file alias="nodisturb">resources/lite-icons/nodisturb-tray.ico</file>
+        <file alias="offline">resources/lite-icons/offline-tray.ico</file>
+        <file alias="online">resources/lite-icons/online-tray.ico</file>
     </qresource>
     <qresource prefix="/images">
         <file alias="close">resources/images/close.png</file>
-        <file alias="history">resources/images/history.png</file>
+        <file alias="history">resources/lite-icons/history.png</file>
         <file alias="info">resources/images/info.png</file>
-        <file alias="messenger">resources/images/messenger.png</file>
-        <file alias="tools">resources/images/tools.png</file>
-        <file alias="file">resources/images/file.png</file>
+        <file alias="messenger">resources/lite-icons/application.png</file>
+        <file alias="tools">resources/lite-icons/tools.png</file>
+        <file alias="file">resources/lite-icons/file.png</file>
         <file alias="font">resources/images/font.png</file>
         <file alias="fontcolor">resources/images/fontcolor.png</file>
         <file alias="smiley">resources/images/smiley.png</file>
@@ -37,13 +40,13 @@
         <file alias="networksettings">resources/images/networksettings.png</file>
         <file alias="transfersettings">resources/images/transfersettings.png</file>
         <file alias="usersettings">resources/images/usersettings.png</file>
-        <file alias="transfer">resources/images/transfer.png</file>
-        <file alias="logosmall">resources/images/logosmall.png</file>
+        <file alias="transfer">resources/lite-icons/transfer.png</file>
+        <file alias="logosmall">resources/lite-icons/application.png</file>
         <file alias="web">resources/images/web.png</file>
-        <file alias="refresh">resources/images/refresh.png</file>
+        <file alias="refresh">resources/lite-icons/refresh.png</file>
         <file alias="question">resources/images/question.png</file>
         <file alias="themesettings">resources/images/themesettings.png</file>
-        <file alias="chat">resources/images/chat.png</file>
+        <file alias="chat">resources/lite-icons/chat.png</file>
         <file alias="blank">resources/images/blank.png</file>
         <file alias="corner_tl_olive">resources/images/corners/corner_tl_olive.png</file>
         <file alias="corner_tr_olive">resources/images/corners/corner_tr_olive.png</file>
@@ -68,14 +71,14 @@
         <file alias="addcontact">resources/images/addcontact.png</file>
         <file alias="newchatroom">resources/images/newchatroom.png</file>
         <file alias="play">resources/images/play.png</file>
-        <file alias="sendfolder">resources/images/sendfolder.png</file>
+        <file alias="sendfolder">resources/lite-icons/sendfolder.png</file>
     </qresource>
     <qresource prefix="/images/status">
-        <file alias="away">resources/images/away.png</file>
-        <file alias="busy">resources/images/busy.png</file>
-        <file alias="nodisturb">resources/images/nodisturb.png</file>
-        <file alias="offline">resources/images/offline.png</file>
-        <file alias="online">resources/images/online.png</file>
+        <file alias="away">resources/lite-icons/away.png</file>
+        <file alias="busy">resources/lite-icons/busy.png</file>
+        <file alias="nodisturb">resources/lite-icons/nodisturb.png</file>
+        <file alias="offline">resources/lite-icons/offline.png</file>
+        <file alias="online">resources/lite-icons/online.png</file>
     </qresource>
     <qresource prefix="/smileys">
         <file alias="01">resources/smileys/01.png</file>

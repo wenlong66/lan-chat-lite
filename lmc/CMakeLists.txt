@@ -164,10 +164,13 @@ target_link_libraries(lmc PRIVATE lmc_core)
 
 if(WIN32)
     target_sources(lmc PRIVATE src/app/lmcwin32.rc)
-    set_target_properties(lmc PROPERTIES OUTPUT_NAME lmc)
+    target_include_directories(lmc PRIVATE ${LMC_RES_DIR}/lite-icons)
+    set_source_files_properties(src/app/lmcwin32.rc PROPERTIES
+        OBJECT_DEPENDS "${LMC_RES_DIR}/lite-icons/application.ico")
+    set_target_properties(lmc PROPERTIES OUTPUT_NAME LanChatLite)
 elseif(APPLE)
-    target_sources(lmc PRIVATE src/app/lmc.icns)
-    set_source_files_properties(src/app/lmc.icns PROPERTIES
+    target_sources(lmc PRIVATE src/resources/lite-icons/application.icns)
+    set_source_files_properties(src/resources/lite-icons/application.icns PROPERTIES
         MACOSX_PACKAGE_LOCATION Resources
     )
     set(LMC_MACOS_SHORT_VERSION "${LMC_VERSION}")
@@ -201,10 +204,10 @@ elseif(APPLE)
         set(LMC_MACOS_BUNDLE_VERSION "${LMC_MACOS_SHORT_VERSION}")
     endif()
     set_target_properties(lmc PROPERTIES
-        OUTPUT_NAME "LAN-Messenger"
+        OUTPUT_NAME "LanChat Lite"
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_ICON_FILE lmc.icns
-        MACOSX_BUNDLE_BUNDLE_NAME "LAN-Messenger"
+        MACOSX_BUNDLE_ICON_FILE application.icns
+        MACOSX_BUNDLE_BUNDLE_NAME "LanChat Lite"
         MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.wenlong66.lanchatlite"
         MACOSX_BUNDLE_BUNDLE_VERSION "${LMC_MACOS_BUNDLE_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${LMC_MACOS_SHORT_VERSION}"
@@ -217,12 +220,14 @@ endif()
 # <appdir>/lmc.rcc (main sets cwd to applicationDirPath; StdLocation::resourceFile())
 # and registered via QResource::registerResource (main.cpp). The 1st role —
 # embedding into the binary — is done by AUTORCC (src/resource.qrc in the sources).
+file(GLOB_RECURSE LMC_RESOURCE_FILES CONFIGURE_DEPENDS ${LMC_RES_DIR}/*)
 add_custom_command(
     OUTPUT ${LMC_RUNTIME_DIR}/lmc.rcc
     COMMAND ${CMAKE_COMMAND} -E make_directory ${LMC_RUNTIME_DIR}
     COMMAND Qt6::rcc -binary ${CMAKE_CURRENT_SOURCE_DIR}/src/resource.qrc
             -o ${LMC_RUNTIME_DIR}/lmc.rcc
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/resource.qrc
+            ${LMC_RESOURCE_FILES}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src
     COMMENT "Building external resource bundle lmc.rcc"
     VERBATIM
@@ -337,9 +342,9 @@ add_dependencies(lmc lmc_runtime_files)
 # Local staging: cmake --build <build-dir> --target package-local
 # ---------------------------------------------------------------------------
 if(APPLE)
-    # macOS: everything goes into LAN-Messenger.app/Contents/MacOS and Qt
+    # macOS: everything goes into "LanChat Lite.app/Contents/MacOS" and Qt
     # imageformat plugins into Contents/Plugins (see main.cpp setLibraryPaths).
-    set(LMC_LAYOUT_BIN_DIR LAN-Messenger.app/Contents/MacOS)
+    set(LMC_LAYOUT_BIN_DIR "LanChat Lite.app/Contents/MacOS")
     set(LMC_LAYOUT_LICENSE COPYING)
 elseif(WIN32)
     # Windows: the license file is named COPYING.txt.
@@ -402,12 +407,12 @@ endif()
 if(APPLE)
     foreach(_plugin libqgif.dylib libqico.dylib libqjpeg.dylib)
         install(FILES ${QT_PLUGINS_DIR}/imageformats/${_plugin}
-                DESTINATION LAN-Messenger.app/Contents/Plugins/imageformats)
+                DESTINATION "LanChat Lite.app/Contents/Plugins/imageformats")
     endforeach()
     # TIFF moved out of qtbase in Qt 6 (qtimageformats module); macOS shipped
     # it historically, so take it when present and skip silently otherwise.
     install(FILES ${QT_PLUGINS_DIR}/imageformats/libqtiff.dylib
-            DESTINATION LAN-Messenger.app/Contents/Plugins/imageformats
+            DESTINATION "LanChat Lite.app/Contents/Plugins/imageformats"
             OPTIONAL)
 elseif(UNIX)
     foreach(_plugin libqgif.so libqico.so libqjpeg.so)

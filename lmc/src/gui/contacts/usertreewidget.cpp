@@ -79,6 +79,52 @@ void lmcUserTreeWidgetDelegate::paint(QPainter* painter, const QStyleOptionViewI
   QString type = pItem->data(0, TypeRole).toString();
   QString name = pItem->data(0, Qt::DisplayRole).toString();
 
+#ifdef LMC_LITE_BUILD
+  if(type == "User" && !pTreeWidget->checkable()) {
+    const bool selected = option.state.testFlag(QStyle::State_Selected);
+    const bool detailed = pTreeWidget->view() == ULV_Detailed;
+    const QPalette colors = option.palette;
+    const QColor foreground = colors.color(selected ? QPalette::HighlightedText : QPalette::Text);
+    QRect row = itemRect.adjusted(0, 2, -1, -2);
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(colors.brush(selected ? QPalette::Highlight :
+        (option.state.testFlag(QStyle::State_MouseOver) ? QPalette::AlternateBase : QPalette::Base)));
+    painter->drawRoundedRect(row, 6, 6);
+    if(option.state.testFlag(QStyle::State_HasFocus)) {
+      painter->setPen(QPen(foreground, 1, Qt::DotLine));
+      painter->setBrush(Qt::NoBrush);
+      painter->drawRoundedRect(row.adjusted(1, 1, -1, -1), 6, 6);
+    }
+
+    const int imageSize = detailed ? 40 : 20;
+    QRect imageRect(row.left() + 10, row.center().y() - imageSize / 2, imageSize, imageSize);
+    QIcon avatar = pItem->data(0, AvatarRole).value<QIcon>();
+    (detailed && !avatar.isNull() ? avatar : pItem->icon(0)).paint(painter, imageRect);
+    if(detailed)
+      pItem->icon(0).paint(painter, QRect(imageRect.right() - 10, imageRect.bottom() - 10, 14, 14));
+
+    QRect textRect = row.adjusted(imageSize + 22, 8, -12, -8);
+    QFont font = option.font;
+    font.setBold(detailed);
+    painter->setFont(font);
+    painter->setPen(foreground);
+    painter->drawText(textRect, Qt::AlignLeft | (detailed ? Qt::AlignTop : Qt::AlignVCenter),
+                     painter->fontMetrics().elidedText(name, Qt::ElideRight, textRect.width()));
+    if(detailed) {
+      font.setBold(false);
+      painter->setFont(font);
+      QString note = pItem->data(0, SubtextRole).toString();
+      if(note.isEmpty())
+        note = pItem->toolTip(0);
+      painter->drawText(textRect, Qt::AlignLeft | Qt::AlignBottom,
+                       painter->fontMetrics().elidedText(note, Qt::ElideRight, textRect.width()));
+    }
+    painter->restore();
+    return;
+  }
+#endif
+
   int padding = 2;
 
   if(type == "Group") {
@@ -212,6 +258,19 @@ lmcUserTreeWidget::lmcUserTreeWidget(QWidget* parent)
 
   isCheckable = false;
   viewType = ULV_Detailed;
+}
+
+void lmcUserTreeWidget::paintEvent(QPaintEvent* event) {
+  QTreeWidget::paintEvent(event);
+#ifdef LMC_LITE_BUILD
+  if(topLevelItemCount() == 0 && objectName() == QStringLiteral("tvUserList") && !isCheckable) {
+    QPainter painter(viewport());
+    QRect area = viewport()->rect().adjusted(24, 24, -24, -24);
+    painter.setPen(palette().color(QPalette::Text));
+    painter.drawText(area, Qt::AlignCenter | Qt::TextWordWrap,
+                     tr("No devices yet\nOpen LanChat Lite on another computer on the same network."));
+  }
+#endif
 }
 
 bool lmcUserTreeWidget::checkable(void) {
