@@ -422,3 +422,52 @@ ctest --test-dir build-zh --output-on-failure --no-tests=error --timeout 90
 增量重建成功，CTest **6/6 通过，19.20 秒**：crypto、clipboardimage、filetransfer、filereceive、translations、contactgroups；构建和测试命令退出码均为 0。日志位于忽略目录 `artifacts/merge-main-release-ctest.log`，不是复用先前打包时的测试结果。
 
 本次没有重新打包或覆盖已交付的 fix1/zh1 ZIP；构建输出、依赖、诊断文件和发行包不入库。未新增 macOS、真实跨机网络、中文原生排版、长时间常驻或 sanitizer 验证，上述限制仍然有效。
+
+## 2026-10-26：主干中文免安装包（zh2）
+
+按用户要求，从已合并的主干提交 `9245b33d3cf383dcef8fc35bbc94a08c2f460d41` 新建独立 Release 构建目录 `build-zh2` 和 zh2 发行目录，不覆盖既有 fix1/zh1 包。本次不修改应用源码、不提交、推送或发布。
+
+环境：Windows 11 x64、MSVC 19.39.33519（工具集 14.39）、Qt 6.8.3、OpenSSL 3.5.4、CMake 4.4.4、Ninja；仅使用进程级工具链环境。实际依赖路径由本机忽略目录的构建脚本提供，未更改全局 PATH、系统运行库、防火墙或安全设置。
+
+```text
+cmake -S . -B build-zh2 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<Qt SDK> -DOPENSSL_ROOT_DIR=<OpenSSL SDK> -DLMC_VERSION=0.1.0-alpha -DLMC_LITE_BUILD=ON -DLMC_BUILD_LMM=OFF -DLMC_BUILD_TEST_AGENT=OFF -DBUILD_TESTING=ON
+cmake --build build-zh2 --parallel 2
+ctest --test-dir build-zh2 --output-on-failure --no-tests=error --timeout 90
+cmake --install build-zh2 --config Release --prefix dist/LanChat-Lite-0.1.0-alpha-zh2-windows-x64-portable
+windeployqt --release --no-compiler-runtime dist/LanChat-Lite-0.1.0-alpha-zh2-windows-x64-portable/lmc.exe
+```
+
+全新 Release 构建、CTest、安装暂存及 Qt 部署均退出 0；本轮 CTest **6/6 通过，13.75 秒**：crypto、clipboardimage、filetransfer、filereceive、translations、contactgroups。中文 `lrelease` 为 **384 finished / 0 unfinished**，同时部署 `qtbase_zh_CN.qm`。生产构建的 `LMC_BUILD_TEST_AGENT=OFF` 已核对。日志：`artifacts/zh2-release-ctest-stage.log`；本机入口：`artifacts/package-zh2.cmd`，均不入库。
+
+仍有既有的可选 Vulkan headers/CMP0177 配置提示；其他区域中缺少对应 Qt 标准翻译的五种语言仍按既有机制保留英文，不影响已部署的简体中文。未为本次打包改动这些行为。
+
+与此前一致，本轮自动测试不等于真实 Windows↔Mac 互传、完整原生中文排版、干净 Windows 机器、睡眠恢复、24 小时常驻、吞吐量或 sanitizer 验收。后续压缩包及受限帮助窗口检查结果在生成后追加；随包验证文档为压缩前快照，最终校验以外部 `.sha256` 为准。
+
+### zh2 Windows 包及受限启动核验
+
+执行 `python artifacts/pack-zh2.py` 成功，结果保存在忽略目录 `artifacts/zh2-package-result.json`：
+
+- [新中文免安装 ZIP](../dist/LanChat-Lite-0.1.0-alpha-zh2-windows-x64-portable.zip)：**28,804,038 bytes，149 个文件**；[外部 SHA-256](../dist/LanChat-Lite-0.1.0-alpha-zh2-windows-x64-portable.sha256) 已生成。
+- EXE 与本轮受测构建逐字节哈希一致；应用及 Qt 标准简体中文 QM 与本轮构建输出一致。唯一 EXE 为 `lmc.exe`，EXE/DLL 均为 x64，无测试代理或安装程序。
+- app-local Qt/OpenSSL/VC CRT 沿用已核验的 fix1 对应版本；复用前逐个根目录 DLL 与已校验 fix1 ZIP 比较 SHA-256 一致，Qt 部署生成的同名 DLL 也与复用来源核对一致。保留原许可证、版权和来源说明。
+- ZIP CRC 及完整解压逐文件 SHA-256 通过。既有 fix1 和 zh1 ZIP 的 SHA-256 在打包前后均未改变，未覆盖其运行目录。
+
+随后在进程内清除 Qt 开发环境变量、限制 PATH 为包目录与 Windows 系统目录，通过复用的 `artifacts/smoke-zh2-help.ps1` 对新包执行 **`lmc.exe /?`**：
+
+- 已事先检查当前启动链：帮助路径读取语言设置并安装翻译，不保存设置；在 IPC 发送和 lmcCore 初始化前返回。不使用 `/noconfig`、`/nohistory`、`/unsync` 或完整主窗口启动。
+- 帮助窗口实际显示简体中文与“确定”按钮，已打开截图检查；向该测试进程窗口发送 Enter 后正常关闭，退出码 **0**。
+- 实际加载的 Qt Core/Gui/Widgets、qwindows、OpenSSL crypto 及三项核心 VC CRT 均位于新包目录，不依赖 Qt SDK 或已安装的 VC CRT 路径。
+- 前后快照核对本应用 INI、头像、分组、传输记录及本应用登录启动项未变；没有重置设置或终止其他用户进程。结果和截图：`artifacts/zh2-help-smoke.json`、`artifacts/zh2-help-window.png`。
+- 此结果仅证明帮助窗口和所列运行依赖可用，**不是完整主窗口、网络、中文排版或干净系统验收**。
+
+zh2 EXE SHA-256：
+
+```text
+46245fe24df894cbed6d892ff0b73694d3f495c9e210245b854a9014500e69d2
+```
+
+zh2 ZIP SHA-256：
+
+```text
+ceded294d6c468430f674e908a5aec161db254166822e74639bdeb22e4073a2d
+```
