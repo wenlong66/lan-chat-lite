@@ -471,3 +471,98 @@ zh2 ZIP SHA-256：
 ```text
 ceded294d6c468430f674e908a5aec161db254166822e74639bdeb22e4073a2d
 ```
+
+## 2026-10-27：macOS arm64 中文测试包（zh2）
+
+从提交 `b9cf38f0963fc2de6c97191bc2748c1c117c75bf` 构建；相较 Windows zh2
+使用的 `9245b33`，只有验证文档差异，应用源码一致。本轮没有修改应用源码或协议。
+用户已运行 Windows 包，并在本轮确认 **Mac 主窗口能看到 Windows 设备**。
+
+环境：macOS 26.7 arm64、Xcode 27.0（27A266a）、Apple clang 21.0.0、Qt 6.8.3、
+OpenSSL 3.6.1、CMake 4.4.4、Ninja 1.13.2，Release。本机 OpenSSL 的最低系统为
+macOS 26.0，所以此包明确以 **Apple Silicon / macOS 26.0+** 为目标；实际运行
+验证系统为 26.7，不是 Intel 或较旧 macOS 的测试结果。
+
+Qt、CMake、Ninja 安装在忽略目录 `artifacts/macos-build/`。Qt 的 8 个官方归档均与
+`download.qt.io` 的 SHA-256 一致；单连接下载较慢，改用校验 Content-Range 的并行
+分段下载，合并后再次校验完整哈希，再交给 aqt 解压。归档清单和日志保存在
+`qt-archive-manifest.json`、`qt-download-parallel.log`、`qt-install-verified.log`。
+
+### 构建、回归和打包
+
+实际命令由本地 `artifacts/macos-build/build-mac.sh` 执行，核心配置为：
+
+```bash
+cmake -S . -B build-macos-arm64 -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="<Qt 6.8.3 SDK>" \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
+  -DOPENSSL_ROOT_DIR="<OpenSSL 3.6.1 SDK>" \
+  -DLMC_VERSION=0.1.0-alpha -DLMC_LITE_BUILD=ON \
+  -DLMC_BUILD_LMM=OFF -DLMC_BUILD_TEST_AGENT=OFF -DBUILD_TESTING=ON \
+  -DLMC_RELEASE_DIR="$PWD/artifacts/macos-build/stage/lmc/release"
+cmake --build build-macos-arm64 --parallel 2
+QT_QPA_PLATFORM=offscreen ctest --test-dir build-macos-arm64 \
+  --output-on-failure --no-tests=error --timeout 90
+cmake --build build-macos-arm64 --target package-local
+```
+
+- Release 构建通过，CTest **6/6 通过，27.07 秒**：crypto、clipboardimage、
+  filetransfer、filereceive、translations、contactgroups。
+- 中文翻译为 **384 finished / 0 unfinished**；应用及 Qt 标准中文 QM 均随包部署。
+- 复用仓库 `stage-mac-app` 在忽略目录中的镜像暂存结构运行，随后复制到独立 `dist`
+  目录；`macdeployqt`、`lipo -verify_arch arm64`、ad-hoc 签名及
+  `codesign --verify --deep --strict` 均通过。
+- 检查包内 **34 个 Mach-O 文件**，均包含 arm64，非系统链接依赖均能在包内找到，
+  没有依赖本机 Qt SDK 或 Homebrew 的绝对库路径。主程序仅为 arm64；未加入测试代理。
+- 日志：`artifacts/macos-build/release-ctest-stage.log`、
+  `build-macos-arm64/Testing/Temporary/LastTest.log`、
+  `artifacts/macos-build/bundle-audit.json`。
+
+### 实际失败及处理
+
+1. aqt 默认创建用户目录中的临时文件被沙箱阻止，改用项目忽略目录内的缓存和临时目录。
+2. 同一个 Qt `qmake` 在沙箱内报缺少 `neon` 并退出 134，沙箱外正常返回 6.8.3；
+   因此构建、测试与启动检查在沙箱外执行，没有更改系统安全策略。
+3. 首次编译完成但链接失败：`ld: framework 'AGL' not found`。旧 Qt SDK 的
+   `FindWrapOpenGL.cmake` 仍强制链接新 Xcode SDK 已移除的 AGL。仅对本地 Qt SDK
+   应用与 [Qt 上游实现](https://github.com/qt/qtbase/blob/dev/cmake/FindWrapOpenGL.cmake)
+   一致的 AGL 链接删除；保留 OpenGL，未改仓库 CMake 或应用源码。补丁为
+   `artifacts/macos-build/qt-sdk-agl.patch`，失败日志为 `first-build-agl-failure.log`。
+   修改 SDK 后重新配置、链接、测试和打包全部通过。
+4. 初次编译包含既有 OpenSSL RSA 和 Qt 颜色 API 弃用警告，未作为本次打包扩展重构。
+
+### 启动与双机验证边界
+
+清除 Qt/DYLD 开发环境并限制 PATH 为系统目录后，对最终 App 启动 `/?`。
+动态加载日志确认 Qt、OpenSSL crypto、Cocoa 平台插件及图片插件从最终 App 内加载。
+原生界面读取工具发生超时，未取得截图，也未完成帮助窗口的人工关闭核验；帮助测试
+进程在 180 秒超时后由测试脚本终止，**这项帮助窗口检查不记为通过**。
+
+界面工具随后启动了正常主程序；用户明确反馈“能看到 Windows 设备”，因此记录
+主窗口运行与 **Mac 发现 Windows** 为用户确认通过。随后对相同 App 执行只读
+`/inst`，返回预期的 1（检测到正在运行的实例），stderr 为空；结果保存于
+`artifacts/macos-build/instance-smoke.json`。主程序保留运行，方便继续双机测试。
+
+未使用 `/noconfig`、`/nohistory` 或 `/unsync`；没有修改防火墙、安全设置或系统登录项。
+Windows 发现 Mac、双向文字/图片/文件完整性、吞吐、睡眠恢复、24 小时常驻、Intel、
+较旧 macOS 和本轮远端 CI 仍待测。测试包只有 ad-hoc 签名，没有 Apple 公证。
+
+最终 App 位于 `dist/LanChat-Lite-0.1.0-alpha-zh2-macos-arm64/LAN-Messenger.app`；
+ZIP 与 `.sha256` 同级。包内验证文档是压缩前快照，最终归档校验结果随后追加。
+
+### Mac zh2 ZIP 最终核验
+
+执行 `python3 artifacts/macos-build/pack-mac.py` 成功，结果记录于
+`artifacts/macos-build/package-result.json`：
+
+- [Mac arm64 ZIP](../dist/LanChat-Lite-0.1.0-alpha-zh2-macos-arm64.zip)：
+  **47,215,061 bytes，约 47.2 MB / 45.0 MiB，175 个文件和符号链接**。
+- ZIP CRC 通过；完整解压后，所有文件 SHA-256 与符号链接目标均与发行目录一致。
+- 解压后主程序执行权限保留，`codesign --verify --deep --strict` 通过。
+- [外部 SHA-256](../dist/LanChat-Lite-0.1.0-alpha-zh2-macos-arm64.sha256) 已生成。
+
+ZIP SHA-256：
+
+```text
+05d16113e2476dc02b6a28d3b2e10e09a85021852424f2d2f5afd8b79c3e0d7e
+```
