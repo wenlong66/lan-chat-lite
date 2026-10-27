@@ -34,8 +34,7 @@ lmcSettingsDialog::lmcSettingsDialog(QWidget* parent, Qt::WindowFlags flags)
   ui.setupUi(this);
   //	remove the help button from window button group
   setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-  //	Destroy the window when it closes
-  setAttribute(Qt::WA_DeleteOnClose, true);
+  // lmcCore reuses this dialog after exec(); its parent owns its lifetime.
 
   pMessageLog = new lmcMessageLog(ui.fraMessageLog);
   ui.logLayout->addWidget(pMessageLog);

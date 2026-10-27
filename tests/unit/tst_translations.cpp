@@ -4,9 +4,11 @@
 #include <QFile>
 #include <QLocale>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QTranslator>
 #include <QXmlStreamReader>
 #include "application.h"
@@ -180,7 +182,6 @@ private slots:
     Application::setLanguage(settings.language());
     lmcStrings::retranslate();
     lmcSettingsDialog dialog;
-    dialog.setAttribute(Qt::WA_DeleteOnClose, false);
     dialog.init();
     auto* selector = dialog.findChild<QComboBox*>("cboLanguage");
     auto* ok = dialog.findChild<QPushButton*>("btnOK");
@@ -200,6 +201,40 @@ private slots:
     auto* fontSizes = dialog.findChild<QComboBox*>("cboFontSize");
     QVERIFY(fontSizes);
     QCOMPARE(fontSizes->itemText(0), QStringLiteral("Small text"));
+  }
+
+  void settingsDialogCanBeReusedAfterClosing_data() {
+    QTest::addColumn<QString>("action");
+    QTest::newRow("ok") << QStringLiteral("btnOK");
+    QTest::newRow("cancel") << QStringLiteral("btnCancel");
+    QTest::newRow("window-close") << QString();
+  }
+
+  void settingsDialogCanBeReusedAfterClosing() {
+    QFETCH(QString, action);
+    QWidget owner;
+    QPointer<lmcSettingsDialog> dialog = new lmcSettingsDialog(&owner);
+    dialog->init();
+    for(int attempt = 0; attempt < 2; ++attempt) {
+      QPushButton* button = action.isEmpty() ? nullptr : dialog->findChild<QPushButton*>(action);
+      QVERIFY(action.isEmpty() || button);
+      QTimer::singleShot(0, dialog, [dialog, button] {
+        if(button)
+          button->click();
+        else
+          dialog->close();
+      });
+      const int result = dialog->exec();
+      QCOMPARE(result, action == "btnOK" ? int(QDialog::Accepted) : int(QDialog::Rejected));
+      // lmcCore keeps this dialog and reloads its settings after exec() returns.
+      QVERIFY2(dialog, "Closing preferences deleted the dialog still cached by lmcCore");
+      QVERIFY(!dialog->isVisible());
+      QVERIFY(!QApplication::activeModalWidget());
+      if(result == QDialog::Accepted)
+        dialog->settingsChanged();
+      QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+      QVERIFY(dialog);
+    }
   }
 };
 

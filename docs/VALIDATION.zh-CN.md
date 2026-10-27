@@ -673,3 +673,60 @@ AppKit 原生文件对话框等系统控件由 macOS 按应用声明与系统语
 没有逐个打开原生文件对话框或人工遍历菜单，也没有执行跨系统收发测试。
 Windows、Intel Mac 与远端 CI 未重跑；未改传输所有权，因此未额外运行 ASan/UBSan。
 未启动真实聊天、修改用户语言偏好、登录项、防火墙或系统安全设置。
+
+## 2026-10-27：修复设置关闭后的悬空指针（settingsfix1）
+
+用户报告 Mac 打开设置、点击确定后窗口变白，关闭按钮也无法正常工作。
+基线为 `cab9904`，保留此前 UI、品牌和 macOS 语言声明修改。
+
+`lmcCore::showSettings()` 缓存设置窗口，在 `exec()` 返回 Accepted 后调用
+`settingsChanged()`，随后还会再次使用同一窗口。设置窗口却启用了
+`Qt::WA_DeleteOnClose`，导致确定、取消或关闭后对象已被销毁，缓存指针悬空；
+确定后的设置刷新因此会访问已释放对象，后续再次打开同样不安全。
+
+生产修复仅移除设置窗口的自动销毁标记，让已有父窗口负责生命周期，匹配现有复用
+逻辑。未修改界面布局、网络协议或用户配置。Qt 的关闭/销毁语义通过 Context7 CLI
+查询 [QDialog 官方文档](https://doc.qt.io/qt-6.8/qdialog.html#done) 核对。
+
+### 复现与回归
+
+在现有 `translations` 测试加入参数化用例
+`settingsDialogCanBeReusedAfterClosing`：使用真实设置窗口的默认属性和 `exec()`，
+点击确定、取消或调用窗口关闭，断言对象仍有效、窗口已隐藏、模态状态已解除；
+确定后执行设置刷新，并再次打开和关闭同一窗口。配置仍隔离在临时目录中。
+同时移除旧语言选择测试中手动禁用自动销毁的覆盖，避免掩盖生产行为。
+
+```bash
+QT_QPA_PLATFORM=offscreen build-macos-arm64/tests/tst_translations settingsDialogCanBeReusedAfterClosing
+QT_QPA_PLATFORM=cocoa build-macos-arm64/tests/tst_translations settingsDialogCanBeReusedAfterClosing
+cmake --build build-macos-arm64 --parallel 2
+ctest --test-dir build-macos-arm64 --output-on-failure --no-tests=error --timeout 90
+QT_QPA_PLATFORM=cocoa build-macos-arm64/tests/tst_translations
+```
+
+- 修复前，offscreen 和原生 Cocoa 后端均稳定 **3 个数据行失败**：关闭后
+  `QPointer` 为空，错误为 `Closing preferences deleted the dialog still cached by lmcCore`。
+  该测试捕获关闭路径的错误生命周期，不声称自动重现截图的每个渲染细节。
+- 修复后 Release 构建通过，全部 CTest **6/6 通过，10.19 秒**。
+- 原生 Cocoa 全套翻译/设置测试 **11 passed / 0 failed，3.698 秒**，包含三种关闭
+  路径、重复打开、设置刷新及语言选择持久化。出现 macOS 输入法 mach port 提示，
+  未导致断言失败。
+- Qt 6.8.3、OpenSSL 3.6.1、macOS 26.7 arm64；沿用先前本地工具链及 AGL SDK
+  修正。生产 `LMC_BUILD_TEST_AGENT=OFF`，未更改传输所有权，未额外运行 sanitizer。
+- 新包包含当前名称、图标和 21 种语言声明；Qt 部署、34 个 Mach-O 的 arm64/依赖检查
+  及 ad-hoc 签名验证通过。独立输出为
+  `dist/LanChat-Lite-0.1.0-alpha-settingsfix1-macos-arm64/LanChat Lite.app`，
+  最低 macOS 26.0；不覆盖旧 zh2/ui1 包或终止用户正在运行的应用。
+- 日志和打包核验位于 `artifacts/settings-close-fix/`：`red.log`、`red-cocoa.log`、
+  `build-green.log`、`ctest.log`、`green-cocoa.log`、`stage.log`、`bundle-audit.json`。
+
+仍需用户退出旧进程后用新包复测实际聊天主窗口。Windows/Intel Mac、远端 CI、
+双机传输与长期常驻未在本轮重测，不将隔离的 Cocoa 设置测试称为完整实机验收。
+
+修复包最终核验：ZIP **46,462,529 bytes（约 46.5 MB）**，175 个文件和符号链接。
+CRC、完整解压后的逐文件 SHA-256/符号链接比对、执行权限与解压后签名检查均通过。
+ZIP 与外部 `.sha256` 位于 `dist/`；随包验证记录为压缩前快照。
+
+```text
+f133faf4d4aa216d1c1ab2e3f0e9294a6844136cb00a5f0b5d32189aee4781f6
+```
