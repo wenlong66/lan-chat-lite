@@ -619,3 +619,57 @@ ui1 ZIP 最终核验：`dist/LanChat-Lite-0.1.0-alpha-ui1-macos-arm64.zip` 为 *
 ```text
 02addc848d9898713ee65c2bfbccd1daccfbbdaacfae148fe228e6177ce0f2b5
 ```
+
+## 2026-10-27：macOS 简体中文完整性检查与语言声明修复
+
+基于 `9e64325` 的本地工作区修改。环境：macOS 26.7 (25G229)、arm64、
+Apple clang 21.0.0、Qt 6.8.3、Release；沿用已配置的本地 SDK，生产测试代理与
+LMM 关闭。构建和 Qt 测试在沙箱外执行，原因同前述本机 Qt CPU 检测限制。
+
+### 检查结果与修复
+
+- 使用 Qt 6.8.3 `lupdate` 重新提取 `lmc/src`、`lmcapp/src`：当前源码与中文词库
+  的 `(context, source, comment)` 集合均为 **387 条**，无缺失、过时、空白或
+  unfinished 条目。保留的英文是键名、快捷键或省略号；未修改词库。
+- 应用与 Qt 中文 QM 的构建、加载和 Mac 安装路径正确。Qt 中文包包含
+  `MAC_APPLICATION_MENU` 的服务、隐藏、退出及 `QCocoaTheme` 的不保存译文。
+- 发现生成的 Mac `Info.plist` 只有 `CFBundleDevelopmentRegion=English`，
+  没有 `CFBundleLocalizations`。Foundation `NSBundle` 实测旧包声明只有 English，
+  偏好 `zh-Hans` 时仍匹配 English。新增回归测试在修复前因此失败。
+- 新增 Mac plist 模板，从实际 `lmc_*.ts` 文件生成全部 21 个语言标识，并保留
+  英文开发语言及既有名称、标识符、图标和版本。修复后 Foundation 实测
+  `zh-Hans → zh-CN`、`en → en-US`、`de → de-DE`，不支持的 `zh-Hant → en-US`。
+  机制依据为 [Qt 6.8 macOS 国际化说明](https://doc.qt.io/qt-6.8/macos-issues.html#internationalization)，
+  本轮通过 Context7 CLI 查询官方文档成功。
+
+### 执行与结果
+
+以下 `cmake` / `ctest` 使用项目忽略目录中已安装的可执行文件：
+
+```bash
+lupdate lmc/src lmcapp/src -no-obsolete -ts artifacts/mac-zh-check/current.ts
+cmake -S . -B build-macos-arm64 -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DLMC_VERSION=0.1.0-alpha
+cmake --build build-macos-arm64 --parallel 2
+ctest --test-dir build-macos-arm64 --output-on-failure --no-tests=error --timeout 90
+QT_QPA_PLATFORM=cocoa build-macos-arm64/tests/tst_translations
+cmake --install build-macos-arm64 --prefix "$PWD/artifacts/mac-zh-check/lmc/release"
+```
+
+- Release 构建通过；最终 CTest **6/6 通过，7.07 秒**。新增测试核对生成包的语言
+  列表与已部署词库一致，核对 Mac 菜单译文及切回英文。
+- 原生 `cocoa` 平台单独运行翻译测试：**8 passed / 0 failed**（含初始化与清理）。
+  设置窗口标题、语言选择持久化、Qt 取消按钮、词库占位符与上述 Mac 翻译查询通过。
+- 在独立忽略目录复制并运行现有 `stage-mac-app`，部署 Qt 并签名成功；最终 App
+  的 plist 语法、21 个语言声明、应用名称与标识符均核对通过，两个中文 QM 与测试
+  使用的构建产物逐字节相同，`codesign --verify --deep --strict` 通过。
+- 日志、Foundation 探针与核验 JSON 位于 `artifacts/mac-zh-check/`。独立测试 App
+  为 `artifacts/mac-zh-check/lmc/setup/mac/LanChat Lite.app`；未覆盖旧 zh2/ui1 包。
+
+### 验证边界
+
+AppKit 原生文件对话框等系统控件由 macOS 按应用声明与系统语言偏好选取语言，
+不保证响应应用首选项的即时切换；本轮验证了系统语言匹配和 Cocoa 翻译测试，
+没有逐个打开原生文件对话框或人工遍历菜单，也没有执行跨系统收发测试。
+Windows、Intel Mac 与远端 CI 未重跑；未改传输所有权，因此未额外运行 ASan/UBSan。
+未启动真实聊天、修改用户语言偏好、登录项、防火墙或系统安全设置。

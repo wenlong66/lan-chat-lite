@@ -206,6 +206,7 @@ elseif(APPLE)
     set_target_properties(lmc PROPERTIES
         OUTPUT_NAME "LanChat Lite"
         MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/setup/mac/Info.plist.in"
         MACOSX_BUNDLE_ICON_FILE application.icns
         MACOSX_BUNDLE_BUNDLE_NAME "LanChat Lite"
         MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.wenlong66.lanchatlite"
@@ -243,9 +244,15 @@ file(GLOB LMC_TS_FILES CONFIGURE_DEPENDS
 list(SORT LMC_TS_FILES)
 
 set(LMC_QM_OUTPUTS "")
+set(LMC_MACOS_LOCALIZATIONS "")
 foreach(ts IN LISTS LMC_TS_FILES)
     get_filename_component(ts_name ${ts} NAME_WE)
     string(REGEX REPLACE "^lmc_" "" qm_name ${ts_name})
+    if(APPLE)
+        # AppKit cannot discover the languages in our custom lang/*.qm layout.
+        string(REPLACE "_" "-" bundle_locale "${qm_name}")
+        string(APPEND LMC_MACOS_LOCALIZATIONS "        <string>${bundle_locale}</string>\n")
+    endif()
     set(qm_out ${LMC_RUNTIME_DIR}/lang/${qm_name}.qm)
     add_custom_command(
         OUTPUT ${qm_out}

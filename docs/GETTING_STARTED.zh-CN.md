@@ -40,7 +40,9 @@ Windows 免安装包将 Microsoft Visual C++ x64 运行库 DLL 与 `LanChatLite.
 
 重新构建的版本提供简体中文。打开 **工具（Tools）→ 首选项（Preferences）→ 常规（General）**，在语言下拉框选择 **简体中文**，点击确定；语言立即切换，下次启动保持选择。切回 English 的选择同样会保存，不会被中文系统重新覆盖。
 
-未保存语言选择时按系统区域选择已部署的语言（简体中文为 `zh_CN`），没有对应语言包时回退英文。语言包随构建部署到 `lang/zh_CN.qm`，Qt 标准按钮翻译位于 `lang/system/qtbase_zh_CN.qm`；不要只复制 EXE。本地 `LanChat-Lite-0.1.0-alpha-zh1-windows-x64-portable` 包含此次中文与 fix1 修复，旧 fix1 包保留不动。原有 `fix1` 包和旧 Actions 包不包含此次新增中文；Mac 需从本次源码重新构建，本轮未验证其界面。
+未保存语言选择时按系统区域选择已部署的语言（简体中文为 `zh_CN`），没有对应语言包时回退英文。语言包随构建部署到 `lang/zh_CN.qm`，Qt 标准按钮翻译位于 `lang/system/qtbase_zh_CN.qm`；不要只复制 EXE。本地 `LanChat-Lite-0.1.0-alpha-zh1-windows-x64-portable` 包含此次中文与 fix1 修复，旧 fix1 包保留不动。原有 `fix1` 包和旧 Actions 包不包含此次新增中文。
+
+macOS 应用包现按随包词库生成 `CFBundleLocalizations`，使系统能识别简体中文等支持语言；旧 zh2/ui1 包需重新构建才能取得此修复。应用自己的界面和 Qt 标准按钮随首选项切换；AppKit 原生文件对话框等系统控件按 macOS 为应用选定的语言显示，不保证随应用内语言选择即时切换。2026-10-27 Mac arm64 的中文词库、Cocoa 翻译测试和应用包语言匹配结果见[验证记录](VALIDATION.zh-CN.md)。
 
 ### 发现不到对方怎么办
 

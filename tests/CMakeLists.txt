@@ -49,6 +49,11 @@ target_compile_definitions(tst_translations PRIVATE
     LMC_TRANSLATIONS_DIR="${CMAKE_BINARY_DIR}/lmc/runtime/lang"
     LMC_CHINESE_TS="${CMAKE_SOURCE_DIR}/translations/lmc_zh_CN.ts")
 add_dependencies(tst_translations lmc_runtime_files)
+if(APPLE)
+    target_compile_definitions(tst_translations PRIVATE
+        LMC_MACOS_INFO_PLIST="$<TARGET_BUNDLE_DIR:lmc>/Contents/Info.plist")
+    add_dependencies(tst_translations lmc)
+endif()
 if(MSVC)
     target_compile_options(tst_translations PRIVATE /utf-8)
 endif()

@@ -62,6 +62,40 @@ private slots:
     QCOMPARE(Application::supportedLanguage("unknown"), QStringLiteral("en_US"));
   }
 
+#ifdef Q_OS_MACOS
+  void macBundleDeclaresShippedLanguages() {
+    QFile file(QStringLiteral(LMC_MACOS_INFO_PLIST));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QXmlStreamReader xml(&file);
+    QString key;
+    QStringList languages;
+    QString developmentRegion;
+    while(!xml.atEnd()) {
+      xml.readNext();
+      if(!xml.isStartElement())
+        continue;
+      if(xml.name() == QLatin1String("key"))
+        key = xml.readElementText();
+      else if(xml.name() == QLatin1String("string")) {
+        const QString value = xml.readElementText();
+        if(key == QLatin1String("CFBundleLocalizations"))
+          languages.append(value);
+        else if(key == QLatin1String("CFBundleDevelopmentRegion"))
+          developmentRegion = value;
+      }
+    }
+    QVERIFY2(!xml.hasError(), qPrintable(xml.errorString()));
+    QVERIFY2(languages.contains("zh-CN"), "macOS must know that the bundle supports Simplified Chinese");
+    QCOMPARE(developmentRegion, QStringLiteral("en"));
+    QStringList expected = Application::availableLanguages();
+    for(QString& locale : expected)
+      locale.replace('_', '-');
+    expected.sort();
+    languages.sort();
+    QCOMPARE(languages, expected);
+  }
+#endif
+
   void defaultAndSavedLanguage() {
     lmcSettings settings;
     QVERIFY(!settings.contains(IDS_LANGUAGE));
@@ -126,9 +160,18 @@ private slots:
     QMessageBox box(QMessageBox::Question, "test", "test", QMessageBox::Cancel);
     QVERIFY(box.button(QMessageBox::Cancel));
     QCOMPARE(box.button(QMessageBox::Cancel)->text().remove('&'), QStringLiteral("取消"));
+#ifdef Q_OS_MACOS
+    QCOMPARE(QCoreApplication::translate("MAC_APPLICATION_MENU", "Services"), QStringLiteral("服务"));
+    QCOMPARE(QCoreApplication::translate("MAC_APPLICATION_MENU", "Hide %1"), QStringLiteral("隐藏 %1"));
+    QCOMPARE(QCoreApplication::translate("MAC_APPLICATION_MENU", "Quit %1"), QStringLiteral("退出 %1"));
+    QCOMPARE(QCoreApplication::translate("QCocoaTheme", "Don't Save"), QStringLiteral("不保存"));
+#endif
     Application::setLanguage("unsupported");
     QCOMPARE(QCoreApplication::translate("lmcSettingsDialog", "Preferences"), QStringLiteral("Preferences"));
     QCOMPARE(Helper::formatSize(12), QStringLiteral("12 bytes"));
+#ifdef Q_OS_MACOS
+    QCOMPARE(QCoreApplication::translate("MAC_APPLICATION_MENU", "Services"), QStringLiteral("Services"));
+#endif
   }
 
   void settingsSelectorSwitchesAndPersistsEnglish() {
