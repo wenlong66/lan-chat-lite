@@ -730,3 +730,57 @@ ZIP 与外部 `.sha256` 位于 `dist/`；随包验证记录为压缩前快照。
 ```text
 f133faf4d4aa216d1c1ab2e3f0e9294a6844136cb00a5f0b5d32189aee4781f6
 ```
+
+### 2026-10-27：已安装应用的实际界面测试
+
+通过原生界面工具打开“应用程序”中的修复版。运行进程路径和可执行文件 SHA-256
+与已验证的 settingsfix1 包一致；结果记录于 `artifacts/settings-close-fix/installed-ui-test.json`。
+
+- 从应用菜单打开首选项，直接点击“确定”：设置关闭，主窗口的头像、状态、签名栏和
+  联系人区域恢复，未出现白屏。
+- 再次打开首选项：成功。截图和辅助功能树显示完整设置表单；未主动改变任何设置值。
+- 点击“取消”：设置关闭，主窗口正常恢复。此 Mac 设置表单没有独立的红色关闭按钮。
+- 另外点击主窗口红色关闭按钮：随后界面工具无法读取窗口并超时，进程仍在运行。
+  源码中该按钮调用 `hide()`，行为设计为隐藏到托盘；已请求用户恢复窗口确认，
+  本次尚不将托盘恢复记为通过。没有强制退出应用或更改系统设置。
+
+以上是安装后实际按钮操作的结果，不仅是 QtTest；跨机收发仍未在本轮执行。
+
+后续用户明确反馈：白屏发生在首选项点击“确定”之后，而非托盘恢复。
+此前辅助功能树中有控件不能单独证明实际绘制正常，故本问题仍待确认，不能据此宣布修复完成。
+本轮重新核验 `/Applications/LanChat Lite.app`（PID 36306），分别通过辅助功能按钮
+和截图坐标鼠标点击“确定”各一次；两次返回的实际截图均显示头像、签名和联系人 Long，
+暂未复现白屏。未修改设置项、未重启进程，也未据未复现结果添加推测性修复。
+正在确认用户触发前是否修改过设置，以补齐复现条件。
+
+### 2026-10-27：设置确认后的 macOS 原生弹层白屏排查
+
+用户确认“不修改设置，直接点确定”并保留现场后，原生截图和辅助功能树均证实
+主窗口仅剩标题栏、内容全白。现场为 `/Applications/LanChat Lite.app`，PID 40481；
+此前 PID 36306 已退出。`sample 40481 3` 显示主线程在正常事件循环中等待，
+不是保存设置阻塞；仍可用应用菜单正常退出。工具冷启动后的重复点击未稳定复现，
+因此不能把此前工具点击正常当作用户问题已消失。
+
+候选修复只在 macOS 将设置的 `Qt::WindowModal` 改为 `Qt::ApplicationModal`，
+保留父子所有权、`exec()` 与保存逻辑，避开原生 sheet。代价是设置打开期间阻止
+应用其他窗口交互；Windows 行为不变。此为对原生弹层兼容问题的规避，尚未证明
+Qt/AppKit 内部的具体根因。
+
+验证环境仍为 macOS 26.7 arm64、Qt 6.8.3、Release：
+
+```bash
+artifacts/macos-build/venv/bin/cmake --build build-macos-arm64 --parallel 2
+artifacts/macos-build/venv/bin/ctest --test-dir build-macos-arm64 --output-on-failure --timeout 90
+QT_QPA_PLATFORM=cocoa build-macos-arm64/tests/tst_translations
+```
+
+- 自动回归新增 macOS 模态类型约束及关闭后父窗口可见、可用检查；修改前 3 项模态约束失败，
+  修改后完整 CTest **6/6（9.18 秒）**、Cocoa 翻译/设置测试 **11/11**。
+  这些断言锁定规避方式与生命周期，不能独立复现或证明原生屏幕白屏已修复。
+- 重新部署 Qt 依赖并通过 ad-hoc 签名校验，将验证版替换至 `/Applications/LanChat Lite.app`；
+  上一版保存在 `artifacts/settings-sheet-fix/previous-LanChat Lite.app`，未清空配置或记录。
+- 安装版设置显示独立标题栏；工具实测“确定”及红色关闭按钮均返回有完整内容的主窗口。
+  用户随后按原操作复测并确认“正常，白屏消失”。当前安装版可执行文件 SHA-256 为
+  `d511064c8d40de71ef29c3fb13925b876fef8189435e9c796ecf882801dce108`。
+  此结果支持原生 sheet 路径的规避有效；Windows 与跨机收发未重测。
+- 采样、构建、红/绿测试、部署日志保存在 `artifacts/settings-sheet-fix/`。

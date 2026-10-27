@@ -213,8 +213,14 @@ private slots:
   void settingsDialogCanBeReusedAfterClosing() {
     QFETCH(QString, action);
     QWidget owner;
+    owner.resize(360, 600);
+    owner.show();
     QPointer<lmcSettingsDialog> dialog = new lmcSettingsDialog(&owner);
     dialog->init();
+#ifdef Q_OS_MACOS
+    // A native sheet can leave its parent blank after closing on macOS 26.
+    QCOMPARE(dialog->windowModality(), Qt::ApplicationModal);
+#endif
     for(int attempt = 0; attempt < 2; ++attempt) {
       QPushButton* button = action.isEmpty() ? nullptr : dialog->findChild<QPushButton*>(action);
       QVERIFY(action.isEmpty() || button);
@@ -230,6 +236,8 @@ private slots:
       QVERIFY2(dialog, "Closing preferences deleted the dialog still cached by lmcCore");
       QVERIFY(!dialog->isVisible());
       QVERIFY(!QApplication::activeModalWidget());
+      QVERIFY(owner.isVisible());
+      QVERIFY(owner.isEnabled());
       if(result == QDialog::Accepted)
         dialog->settingsChanged();
       QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);

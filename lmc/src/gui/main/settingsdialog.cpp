@@ -34,6 +34,10 @@ lmcSettingsDialog::lmcSettingsDialog(QWidget* parent, Qt::WindowFlags flags)
   ui.setupUi(this);
   //	remove the help button from window button group
   setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+#ifdef Q_OS_MACOS
+  // Avoid native sheets leaving the parent window blank on macOS 26.
+  setWindowModality(Qt::ApplicationModal);
+#endif
   // lmcCore reuses this dialog after exec(); its parent owns its lifetime.
 
   pMessageLog = new lmcMessageLog(ui.fraMessageLog);
