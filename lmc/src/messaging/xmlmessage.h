@@ -64,6 +64,7 @@
 #define XN_FILEPATH "filepath"
 #define XN_FILENAME "filename"
 #define XN_FILESIZE "filesize"
+#define XN_CONTENTTYPE "contenttype"
 #define XN_CHATSTATE "chatstate"
 #define XN_QUERY "query"
 #define XN_QUERYOP "queryop"

@@ -35,6 +35,7 @@ add_library(lmc_core STATIC
     src/network/netstreamer.cpp
     src/network/network.cpp
     src/gui/widgets/qmessagebrowser.cpp
+    src/gui/widgets/chatimage.cpp
     src/core/settings.cpp
     src/gui/main/settingsdialog.cpp
     src/core/shared.cpp
@@ -79,6 +80,7 @@ add_library(lmc_core STATIC
     src/network/netstreamer.h
     src/network/network.h
     src/gui/widgets/qmessagebrowser.h
+    src/gui/widgets/chatimage.h
     src/app/resource.h
     src/core/settings.h
     src/gui/main/settingsdialog.h

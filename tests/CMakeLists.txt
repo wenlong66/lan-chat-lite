@@ -25,7 +25,7 @@ add_test(NAME crypto COMMAND tst_crypto)
 # no X server needed for headless crypto checks.
 set_tests_properties(crypto PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-set(LMC_REGRESSION_TESTS clipboardimage filetransfer filereceive translations)
+set(LMC_REGRESSION_TESTS clipboardimage chatimage filetransfer filereceive translations)
 if(LMC_LITE_BUILD)
     list(APPEND LMC_REGRESSION_TESTS contactgroups)
 endif()
@@ -44,6 +44,8 @@ foreach(test_name IN LISTS LMC_REGRESSION_TESTS)
         TIMEOUT 90)
 endforeach()
 
+target_sources(tst_chatimage PRIVATE ${CMAKE_SOURCE_DIR}/lmc/src/resource.qrc)
+
 target_sources(tst_translations PRIVATE ${CMAKE_SOURCE_DIR}/lmc/src/resource.qrc)
 target_compile_definitions(tst_translations PRIVATE
     LMC_TRANSLATIONS_DIR="${CMAKE_BINARY_DIR}/lmc/runtime/lang"
@@ -56,4 +58,5 @@ if(APPLE)
 endif()
 if(MSVC)
     target_compile_options(tst_translations PRIVATE /utf-8)
+    target_compile_options(tst_chatimage PRIVATE /utf-8)
 endif()

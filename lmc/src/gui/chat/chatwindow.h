@@ -106,7 +106,7 @@ private:
   void encodeMessage(QString* lpszMessage);
   void processFileOp(XmlMessage* pMessage);
   void appendMessageLog(MessageType type, QString* lpszUserId, QString* lpszUserName, XmlMessage* pMessage);
-  void updateFileMessage(FileMode mode, FileOp op, QString fileId);
+  void updateFileMessage(FileMode mode, FileOp op, QString fileId, QString filePath = QString());
   void showStatus(int flag, bool add);
   QString getWindowTitle(void);
   void setMessageFont(QFont& font);

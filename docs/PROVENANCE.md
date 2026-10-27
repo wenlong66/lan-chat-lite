@@ -31,3 +31,18 @@ Current Windows/macOS builds use `LanChatLite.exe` and `LanChat Lite.app` (bundl
 ## Lite artwork and UI
 
 The SVG artwork in `lmc/src/resources/lite-icons/` was created for LanChat Lite in October 2026. The PNG, ICO and ICNS variants are generated from those original vectors, with no external icon pack or image service. These assets and `scripts/render-icons.cpp` are licensed GPL-3.0-or-later. The upstream artwork and copyright notices remain in the repository. See [branding notes](BRANDING.zh-CN.md) for regeneration and platform mapping.
+
+## Inline screenshot messages (October 2026)
+
+Clipboard screenshot offers remain `filetype=normal` and add optional
+`contenttype=image/png` metadata. Updated peers auto-accept these PNG offers up to
+65 MiB and render a thumbnail only after local commit; unmarked files keep the
+existing file interaction. Older Lite receivers ignore the extra field and offer
+the PNG as a normal file. START2/DONE2 and SHA-256 semantics are unchanged.
+
+`gui/widgets/chatimage.{h,cpp}` is original GPL-3.0-or-later code. Its Qt text object
+uses a shared 8 MiB thumbnail cache, PNG-only decoding, a 16 MiPixel / 64 MiB
+decoded-image bound, and a 320×240 preview size. It follows the Qt
+[custom text object API](https://doc.qt.io/qt-6/qtextobjectinterface.html), with no
+third-party image code copied. Completed sent images are retained in `Sent Images`
+under the configured receive directory; stored chat logs retain local paths.

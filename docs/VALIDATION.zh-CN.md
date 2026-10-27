@@ -784,3 +784,75 @@ QT_QPA_PLATFORM=cocoa build-macos-arm64/tests/tst_translations
   `d511064c8d40de71ef29c3fb13925b876fef8189435e9c796ecf882801dce108`。
   此结果支持原生 sheet 路径的规避有效；Windows 与跨机收发未重测。
 - 采样、构建、红/绿测试、部署日志保存在 `artifacts/settings-sheet-fix/`。
+
+## 2026-10-27：截图直接显示在聊天中
+
+基于 `bfd7e9f` 工作区修改。macOS 26.7 arm64、Qt 6.8.3、Release；沿用已有本地
+Qt/OpenSSL 工具链和 AGL SDK 修正，生产 `LMC_BUILD_TEST_AGENT=OFF`、`LMC_BUILD_LMM=OFF`。
+
+### 行为与范围
+
+- 剪贴板截图确认发送后携带可选 `contenttype=image/png` 元数据；新版自动接收，
+  收到本地完成事件后显示缩略图。普通文件和无标记的旧版截图保持文件附件行为。
+- 发送端显示本地图片及发送状态；只有现有 DONE2 摘要核对通过后才标记完成。
+  发送成功的原图移动到接收目录下的 `Sent Images`，供点击打开及重载使用；若移动失败，
+  本次会话继续使用临时文件，退出后可能失效。接收端使用本地实际落盘路径，忽略远端路径。
+- 缩略图不超过 320×240，共享缓存不超过 8 MiB；PNG 输入文件不超过 65 MiB，
+  解码前检查 16 MiPixels / 64 MiB 限制。缺失、损坏或超限时显示不可用。
+  原图属于本地聊天文件，用户可清理；历史记录/导出 HTML 保存可点击的原图链接。
+- 修正聊天文件状态只修改副本的问题，使完成/中断状态和实际保存路径可随聊天重载保留。
+  文件的 START2/DONE2 实现与传输对象所有权未变，未额外运行 ASan/UBSan。
+
+### 命令与结果
+
+```bash
+artifacts/macos-build/venv/bin/cmake --build build-macos-arm64 --parallel 2
+QT_QPA_PLATFORM=offscreen build-macos-arm64/tests/tst_chatimage
+artifacts/macos-build/venv/bin/ctest --test-dir build-macos-arm64 --output-on-failure --timeout 90
+QT_QPA_PLATFORM=cocoa build-macos-arm64/tests/tst_chatimage
+artifacts/macos-build/venv/bin/cmake --install build-macos-arm64 --prefix "$PWD/artifacts/chatimage/package/lmc/release"
+```
+
+- 修改前新增测试 **2 失败**：没有自动接受图片、发送端没有内联图片对象。
+- 首次构建在沙箱中运行 Qt `uic` 报 `Incompatible processor ... neon`；同一命令
+  在沙箱外通过 CPU 特性检查。测试扩展曾调用私有 `addFileTransfer` 编译失败，
+  已改为在测试中提供文件请求回显，未开放生产私有 API。
+- 最终 Release 构建通过，只有已有 Qt/OpenSSL 弃用警告；全部 CTest **7/7 通过，8.86 秒**。
+- 新 `chatimage` 套件在 offscreen 和 Cocoa 均为 **10 passed / 0 failed**（含初始化与清理），
+  覆盖自动接受、完成前不显示、失败/超限/损坏/删除、发送图片保留、重载、普通 PNG 附件不变、
+  原图 URL 分发、真实 TCP PNG 收发、实际像素绘制和缩窄窗口。
+- TCP 用例使用真实 `FileSender` / `FileReceiver` 和 loopback socket，验证收图完成事件触发
+  渲染、双端完成及像素一致；文件请求信令由测试提供，不等同于双机设备发现和完整 GUI 互传。
+- Cocoa 功能测试 **1.213 秒**；已检查生成的聊天区域截图，图片为可见缩略图，带完成状态。
+  损坏 PNG 测试中的 libpng 报错是预期拒绝；offscreen 的字体/尺寸提示未导致失败。
+- 本轮日志和渲染截图保存在忽略目录 `artifacts/chatimage/`。测试使用隔离设置和临时文件；
+  未改变用户配置、已安装应用、系统权限或防火墙。
+
+Windows、Intel Mac、远端 CI、Windows↔Mac 真实局域网、长期连续传图与 24h 内存仍待测。
+两端必须更新后才能获得截图自动接收/内联显示；本轮通过不代表已安装的旧程序具有此功能。
+
+### 本地 macOS 试用包
+
+生成 `dist/LanChat-Lite-0.1.0-alpha-inline-images1-macos-arm64.zip`（46,491,234 bytes，
+约 46.5 MB），最低系统版本沿用本地构建的 macOS 26.0。此包未替换 `/Applications` 中的旧版。
+Qt 依赖部署、34 个 Mach-O 的 arm64/依赖检查、中文词库、ad-hoc 签名均通过。
+首次使用 Python `shutil.copytree` 复制已签名 App 时，语言文件的签名扩展属性丢失，
+导致后续解压签名检查失败；改用 `ditto --rsrc --extattr` 复制后重新打包。
+最终 ZIP CRC、解压后 181 个文件/符号链接比对、执行权限与严格签名检查均通过。
+清除 Qt/DYLD 开发环境后的只读 `/inst` 启动检查通过，未启动网络会话。
+随包文档为打包前快照；核验详情见 `artifacts/chatimage/package-result.json`、
+`bundle-audit.json`、`package-smoke.json`。
+
+SHA-256：`6b7c915e571adf79e1855bd3b49a962ca4f163d7e4cf7f60b0e8bdee914d79b2`。
+
+### 2026-10-28：替换安装版并启动
+
+按用户明确要求，使用应用自身 `/term` 命令正常退出旧进程，确认退出后将已核验的
+inline-images1 版本替换到 `/Applications/LanChat Lite.app`。旧版完整备份保存在
+`artifacts/chatimage-install-20261028/previous-LanChat Lite.app`，未清空配置或聊天记录。
+安装版严格签名检查通过，可执行文件 SHA-256 与新包一致：
+`c6b5d97788739eda756f7c460559a4671f345d8f3a6b474788c1201c1362b9d3`。
+
+已打开新版并通过原生界面树及截图确认主窗口正常显示：原昵称、头像、在线状态与
+联系人区域可见。此时界面提示暂未发现设备；没有发送测试消息或宣称双机传图已通过。
+安装和备份核验记录位于 `artifacts/chatimage-install-20261028/install.json`。

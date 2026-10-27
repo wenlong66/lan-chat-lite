@@ -30,13 +30,14 @@
 #include "chatwindow.h"
 #include "gui/widgets/actionhelper.h"
 #include "gui/widgets/clipboardimage.h"
+#include "gui/widgets/chatimage.h"
 
 const qint64 pauseTime = 5000;
 
 namespace {
 // Application-session lifetime: closing a conversation must not remove a PNG
-// while the peer is still accepting/downloading it. Normal completion removes
-// files earlier; the directory removes any leftovers at orderly app exit.
+// while the peer is still accepting/downloading it. Completed screenshots move
+// to sent-image storage; the directory removes leftovers at orderly app exit.
 QTemporaryDir& clipboardAttachmentDirectory() {
   static QTemporaryDir directory(QDir::tempPath() + QStringLiteral("/lanchat-lite-clipboard-XXXXXX"));
   return directory;
@@ -267,7 +268,9 @@ void lmcChatWindow::receiveMessage(MessageType type, QString* lpszUserId, XmlMes
       appendMessageLog(type, lpszUserId, &senderName, pMessage);
       if(pMessage->data(XN_MODE) == FileModeNames[FM_Receive] && (isHidden() || !isActiveWindow())) {
         pSoundPlayer->play(SE_NewFile);
-        if(type == MT_File)
+        if(type == MT_File && ChatImage::isImageMessage(pMessage))
+          title = tr("%1 sends an image...");
+        else if(type == MT_File)
           title = tr("%1 sends a file...");
         else
           title = tr("%1 sends a folder...");
@@ -516,8 +519,7 @@ void lmcChatWindow::pasteImage(const QImage& image) {
       .arg(image.width()).arg(image.height()).arg(peerNames.value(peerId)),
     QMessageBox::Ok | QMessageBox::Cancel, this);
   confirmation.setTextFormat(Qt::PlainText);
-  confirmation.setInformativeText(tr("The image will be sent as a PNG attachment. "
-                                    "The other device can accept or decline it."));
+  confirmation.setInformativeText(tr("The image will appear directly in the conversation on updated devices."));
   confirmation.setIconPixmap(QPixmap::fromImage(image.scaled(360, 220, Qt::KeepAspectRatio,
                                                             Qt::SmoothTransformation)));
   confirmation.button(QMessageBox::Ok)->setText(tr("Send image"));
@@ -770,6 +772,8 @@ void lmcChatWindow::sendObject(MessageType type, QString* lpszPath) {
     xmlMessage.addData(XN_FILETYPE, FileTypeNames[FT_Normal]);
     xmlMessage.addData(XN_FILEOP, FileOpNames[FO_Request]);
     xmlMessage.addData(XN_FILEPATH, *lpszPath);
+    if(type == MT_File && isClipboardAttachment(*lpszPath))
+      xmlMessage.addData(XN_CONTENTTYPE, "image/png");
 
     QString userId = peerIds.value(peerId);
     emit messageSent(type, &userId, &xmlMessage);
@@ -787,13 +791,24 @@ void lmcChatWindow::processFileOp(XmlMessage* pMessage) {
   int fileOp = Helper::indexOf(FileOpNames, FO_Max, pMessage->data(XN_FILEOP));
   int fileMode = Helper::indexOf(FileModeNames, FM_Max, pMessage->data(XN_MODE));
   QString fileId = pMessage->data(XN_FILEID);
+  QString filePath = (fileOp == FO_Accept || fileOp == FO_Complete)
+    ? pMessage->data(XN_FILEPATH) : QString();
 
   if(fileMode == FM_Send && fileOp != FO_Accept &&
      (fileOp == FO_Complete || fileOp == FO_Decline || fileOp == FO_Cancel ||
       fileOp == FO_Abort || fileOp == FO_Error)) {
     const QString imagePath = clipboardTransfers.take(fileId);
-    if(isClipboardAttachment(imagePath))
-      QFile::remove(imagePath);
+    if(isClipboardAttachment(imagePath)) {
+      if(fileOp == FO_Complete) {
+        const QDir sentImages(QDir(StdLocation::fileStorageDir()).filePath("Sent Images"));
+        const QString savedPath = sentImages.filePath(QFileInfo(imagePath).fileName());
+        if(QDir().mkpath(sentImages.path()) && QFile::rename(imagePath, savedPath))
+          filePath = savedPath;
+        // On a storage failure keep the staging image until exit for this conversation.
+      } else {
+        QFile::remove(imagePath);
+      }
+    }
   }
 
   switch(fileOp) {
@@ -803,7 +818,7 @@ void lmcChatWindow::processFileOp(XmlMessage* pMessage) {
   case FO_Error:
   case FO_Abort:
   case FO_Complete:
-    updateFileMessage((FileMode)fileMode, (FileOp)fileOp, fileId);
+    updateFileMessage((FileMode)fileMode, (FileOp)fileOp, fileId, filePath);
     break;
   default:
     break;
@@ -816,8 +831,8 @@ void lmcChatWindow::appendMessageLog(MessageType type, QString* lpszUserId, QStr
     pSaveAction->setEnabled(pMessageLog->hasData);
 }
 
-void lmcChatWindow::updateFileMessage(FileMode mode, FileOp op, QString fileId) {
-  pMessageLog->updateFileMessage(mode, op, fileId);
+void lmcChatWindow::updateFileMessage(FileMode mode, FileOp op, QString fileId, QString filePath) {
+  pMessageLog->updateFileMessage(mode, op, fileId, filePath);
 }
 
 void lmcChatWindow::showStatus(int flag, bool add) {

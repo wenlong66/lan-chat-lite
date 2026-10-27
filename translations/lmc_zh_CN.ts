@@ -1146,6 +1146,10 @@ Copyright (C) 2010-2012 Qualia Digital Solutions.
 <context>
     <name>lmcChatWindow</name>
     <message>
+        <source>%1 sends an image...</source>
+        <translation>%1 发来图片...</translation>
+    </message>
+    <message>
         <source>File</source>
         <translation>文件</translation>
     </message>
@@ -1301,8 +1305,8 @@ Copyright (C) 2010-2012 Qualia Digital Solutions.
     </message>
     <message>
         <location filename="../lmc/src/gui/chat/chatwindow.cpp" line="501"/>
-        <source>The image will be sent as a PNG attachment. The other device can accept or decline it.</source>
-        <translation>图片将以 PNG 附件形式发送，对方可以接受或拒绝。</translation>
+        <source>The image will appear directly in the conversation on updated devices.</source>
+        <translation>使用新版的设备会直接在聊天中显示这张图片。</translation>
     </message>
     <message>
         <location filename="../lmc/src/gui/chat/chatwindow.cpp" line="505"/>
@@ -1632,6 +1636,34 @@ File may not exist, or may not be compatible with this version of %2.</source>
 </context>
 <context>
     <name>lmcMessageLog</name>
+    <message>
+        <source>Image to %1</source>
+        <translation>发送给 %1 的图片</translation>
+    </message>
+    <message>
+        <source>Image from %1</source>
+        <translation>%1 发来的图片</translation>
+    </message>
+    <message>
+        <source>Image</source>
+        <translation>图片</translation>
+    </message>
+    <message>
+        <source>Receiving image...</source>
+        <translation>正在接收图片...</translation>
+    </message>
+    <message>
+        <source>Image unavailable</source>
+        <translation>图片不可用</translation>
+    </message>
+    <message>
+        <source>Click to open image</source>
+        <translation>点击查看原图</translation>
+    </message>
+    <message>
+        <source>Image (click to open)</source>
+        <translation>图片（点击查看）</translation>
+    </message>
     <message>
         <location filename="../lmc/src/gui/chat/messagelog.cpp" line="545"/>
         <source>Broadcast message from %1:</source>
@@ -2122,6 +2154,13 @@ Derived from LAN Messenger. No account or central server required.</source>
 Open LanChat Lite on another computer on the same network.</source>
         <translation>暂未发现设备
 请在同一局域网的另一台电脑上打开 LanChat Lite。</translation>
+    </message>
+</context>
+<context>
+    <name>ChatImage</name>
+    <message>
+        <source>Image unavailable</source>
+        <translation>图片不可用</translation>
     </message>
 </context>
 </TS>

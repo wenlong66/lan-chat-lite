@@ -29,8 +29,11 @@
 #include <QAction>
 #include <QScrollBar>
 #include <QTextBlock>
+#include <QAbstractTextDocumentLayout>
+#include <QTimer>
 #include "messagelog.h"
 #include "gui/widgets/actionhelper.h"
+#include "gui/widgets/chatimage.h"
 
 const QString acceptOp("accept");
 const QString declineOp("decline");
@@ -44,6 +47,8 @@ lmcMessageLog::lmcMessageLog(QWidget* parent)
   //			this, SLOT(log_linkHovered(QString, QString, QString)));
 
   connect(this, &QTextBrowser::anchorClicked, this, &lmcMessageLog::onAnchorClicked);
+  setOpenExternalLinks(false);
+  document()->documentLayout()->registerHandler(ChatImage::ObjectType, new ChatImage(this));
 
   createContextMenu();
 
@@ -62,6 +67,7 @@ lmcMessageLog::lmcMessageLog(QWidget* parent)
   linkHovered = false;
   outStyle = false;
   autoScroll = true;
+  autoFile = false;
 }
 
 lmcMessageLog::~lmcMessageLog() {
@@ -174,6 +180,9 @@ void lmcMessageLog::appendMessageLog(MessageType type, QString* lpszUserId, QStr
     break;
   case MT_File:
   case MT_Folder:
+    if(pMessage->data(XN_MODE) == FileModeNames[FM_Receive] &&
+       pMessage->data(XN_FILEOP) == FileOpNames[FO_Request])
+      pMessage->removeData(XN_FILEPATH); // Never render a path supplied by the sender.
     id = getFileTempId(pMessage);
     html = getFileMessageText(type, lpszUserName, pMessage, bReload);
     lastId = QString();
@@ -203,17 +212,23 @@ void lmcMessageLog::appendMessageLog(MessageType type, QString* lpszUserId, QStr
   }
 }
 
-void lmcMessageLog::updateFileMessage(FileMode mode, FileOp op, QString fileId) {
+void lmcMessageLog::updateFileMessage(FileMode mode, FileOp op, QString fileId, QString filePath) {
   QString tempId = getFileTempId(mode, fileId);
 
   //	update the entry in message log
   for(int index = 0; index < messageLog.count(); index++) {
-    SingleMessage msg = messageLog.at(index);
+    SingleMessage& msg = messageLog[index];
     if(tempId.compare(msg.id) == 0) {
-      XmlMessage xmlMessage = msg.message;
+      XmlMessage xmlMessage = msg.message.clone();
       xmlMessage.removeData(XN_FILEOP);
       xmlMessage.addData(XN_FILEOP, FileOpNames[op]);
+      if(!filePath.isEmpty()) {
+        xmlMessage.removeData(XN_FILEPATH);
+        xmlMessage.addData(XN_FILEPATH, filePath);
+      }
       msg.message = xmlMessage;
+      auto& files = mode == FM_Send ? sendFileMap : receiveFileMap;
+      files.insert(fileId, xmlMessage);
 
       QString html = getFileMessageText(msg.type, &msg.userName, &msg.message);
       replaceMessageLog(MT_File, tempId, html);
@@ -272,6 +287,13 @@ QString lmcMessageLog::prepareMessageLogForSave(OutputFormat format) {
                                                                           "<span class='message'>" +
           messageText + "</span></p>";
         html.append(htmlMsg);
+      } else if(msg.type == MT_File && ChatImage::isImageMessage(&msg.message)) {
+        const QString path = msg.message.data(XN_FILEPATH);
+        if(msg.message.data(XN_FILEOP) == FileOpNames[FO_Complete] && !path.isEmpty())
+          html.append(QString("<p>%1: <a href=\"%2\">%3</a></p>")
+                        .arg(msg.userName.toHtmlEscaped(),
+                             QUrl::fromLocalFile(path).toString(QUrl::FullyEncoded).toHtmlEscaped(),
+                             tr("Image (click to open)")));
       }
     }
 
@@ -287,6 +309,9 @@ QString lmcMessageLog::prepareMessageLogForSave(OutputFormat format) {
           msg.userName + " [" + QLocale::system().toString(time.time(), QLocale::ShortFormat) + "]:\n" +
           msg.message.data(XN_MESSAGE) + "\n\n";
         text.append(textMsg);
+      } else if(msg.type == MT_File && ChatImage::isImageMessage(&msg.message) &&
+                msg.message.data(XN_FILEOP) == FileOpNames[FO_Complete]) {
+        text.append(msg.userName + ": " + tr("Image") + " " + msg.message.data(XN_FILEPATH) + "\n\n");
       }
     }
 
@@ -384,11 +409,8 @@ void lmcMessageLog::onAnchorClicked(const QUrl& url) {
   QString linkPath = url.toString();
 
   //	this is a hack so qdesktopservices can open a network path
-  if(linkPath.startsWith("file")) {
-    // strip out the 'file:' prefix and get the path
-    linkPath = linkPath.mid(5);
-    // use a url that contains native separators
-    QDesktopServices::openUrl(QUrl(QDir::toNativeSeparators(linkPath)));
+  if(url.isLocalFile()) {
+    QDesktopServices::openUrl(url);
     return;
   } else if(linkPath.startsWith("www")) {
     // prepend 'http://' to link
@@ -401,6 +423,8 @@ void lmcMessageLog::onAnchorClicked(const QUrl& url) {
   }
 
   QStringList linkData = linkPath.split("/", Qt::SkipEmptyParts);
+  if(linkData.size() != 4)
+    return;
   FileMode mode;
   FileOp op;
 
@@ -508,6 +532,33 @@ void lmcMessageLog::insertMessageLog(QTextCursor cursor, QString& html, MessageT
   QTextFrame* frame = cursor.insertFrame(frameFormat);
   frame->frameFormat().setMargin(0);
   frame->firstCursorPosition().insertHtml(html);
+
+  // Replace only our generated image placeholder with a bounded custom object.
+  for(QTextBlock block = frame->firstCursorPosition().block();
+      block.isValid() && block.position() <= frame->lastPosition(); block = block.next()) {
+    for(auto it = block.begin(); !it.atEnd(); ++it) {
+      const QTextFragment fragment = it.fragment();
+      QTextCharFormat format = fragment.charFormat();
+      QUrl url(format.anchorHref());
+      if(url.scheme() != "lmc-image")
+        continue;
+      url.setScheme("file");
+      const QString path = url.toLocalFile();
+      const QImage image = ChatImage::thumbnail(path);
+      if(image.isNull())
+        continue;
+      format.setObjectType(ChatImage::ObjectType);
+      format.setProperty(ChatImage::Path, path);
+      format.setProperty(ChatImage::Size, QSizeF(image.size()));
+      format.setToolTip(tr("Click to open image"));
+      format.setAnchorHref(QUrl::fromLocalFile(path).toString(QUrl::FullyEncoded));
+      QTextCursor imageCursor(document());
+      imageCursor.setPosition(fragment.position());
+      imageCursor.setPosition(fragment.position() + fragment.length(), QTextCursor::KeepAnchor);
+      imageCursor.insertText(QString(QChar::ObjectReplacementCharacter), format);
+      break;
+    }
+  }
 
   QTextBlock block = frame->firstCursorPosition().block();
 
@@ -647,6 +698,54 @@ QString lmcMessageLog::getFileMessageText(MessageType type, QString* lpszUserNam
 
   FileOp fileOp = (FileOp)Helper::indexOf(FileOpNames, FO_Max, pMessage->data(XN_FILEOP));
   FileMode fileMode = (FileMode)Helper::indexOf(FileModeNames, FM_Max, pMessage->data(XN_MODE));
+
+  if(type == MT_File && ChatImage::isImageMessage(pMessage)) {
+    const bool sending = fileMode == FM_Send;
+    html = sending ? themeData.outMsg : themeData.inMsg;
+    const QString avatar = participantAvatars.value(sending ? localId : peerId);
+    html.replace("%iconpath%", QFile::exists(avatar)
+      ? QUrl::fromLocalFile(avatar).toString(QUrl::FullyEncoded).toHtmlEscaped() : "qrc" AVT_DEFAULT);
+    html.replace("%time%", "");
+    html.replace("%style%", "");
+    html.replace("%sender%", (sending ? tr("Image to %1") : tr("Image from %1"))
+                              .arg(lpszUserName->toHtmlEscaped()));
+    QString content;
+    const QString path = pMessage->data(XN_FILEPATH);
+    if((sending || fileOp == FO_Complete) && !ChatImage::thumbnail(path).isNull()) {
+      QUrl url = QUrl::fromLocalFile(path);
+      url.setScheme("lmc-image");
+      content = QString("<a href=\"%1\">%2</a>")
+                  .arg(url.toString(QUrl::FullyEncoded).toHtmlEscaped(), tr("Image"));
+    } else if(fileOp == FO_Complete) {
+      content = tr("Image unavailable");
+    } else if(!sending && (fileOp == FO_Request || fileOp == FO_Accept)) {
+      content = tr("Receiving image...");
+    }
+    html.replace("%message%", content + "<br/><span style='color: #777777'>%links%</span>");
+    if(fileOp == FO_Request) {
+      if(sending) {
+        sendFileMap.insert(fileId, *pMessage);
+        html.replace("%links%", "<a href='lmc://file/cancel/" + fileId + "'>" + tr("Cancel") + "</a>");
+      } else {
+        receiveFileMap.insert(fileId, *pMessage);
+        html.replace("%links%", "");
+        if(!bReload) {
+          // Let appendMessageLog store the request before synchronous accept events arrive.
+          QTimer::singleShot(0, this, [this, fileId] {
+            XmlMessage request = receiveFileMap.value(fileId);
+            if(request.data(XN_FILEOP) == FileOpNames[FO_Request]) {
+              updateFileMessage(FM_Receive, FO_Accept, fileId);
+              fileOperation(fileId, acceptOp, "file");
+            }
+          });
+        }
+      }
+    } else {
+      html.replace("%links%", getFileStatusMessage(fileMode, fileOp));
+    }
+    hasData = true;
+    return html;
+  }
 
   if(fileMode == FM_Send) {
     caption = tr("Sending '%1' to %2.");

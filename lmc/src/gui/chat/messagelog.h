@@ -48,7 +48,7 @@ public:
   void reloadTheme();
   void appendMessageLog(MessageType type, QString* lpszUserId, QString* lpszUserName, XmlMessage* pMessage,
                         bool bReload = false);
-  void updateFileMessage(FileMode mode, FileOp op, QString fileId);
+  void updateFileMessage(FileMode mode, FileOp op, QString fileId, QString filePath = QString());
   void updateUserName(QString* lpszUserId, QString* lpszUserName);
   void updateAvatar(QString* lpszUserId, QString* lpszFilePath);
   void reloadMessageLog(void);
