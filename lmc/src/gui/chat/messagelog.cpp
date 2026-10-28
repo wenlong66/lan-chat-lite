@@ -31,6 +31,8 @@
 #include <QTextBlock>
 #include <QAbstractTextDocumentLayout>
 #include <QTimer>
+#include <QClipboard>
+#include <QMessageBox>
 #include "messagelog.h"
 #include "gui/widgets/actionhelper.h"
 #include "gui/widgets/chatimage.h"
@@ -453,13 +455,49 @@ void lmcMessageLog::log_linkHovered(const QString& link, const QString& title, c
 }
 
 void lmcMessageLog::showContextMenu(const QPoint& pos) {
+  QString imagePath;
+  const QString anchor = anchorAt(pos);
+  if(!anchor.isEmpty()) {
+    const QTextBlock block = cursorForPosition(pos).block();
+    for(auto it = block.begin(); !it.atEnd(); ++it) {
+      const QTextCharFormat format = it.fragment().charFormat();
+      if(format.objectType() == ChatImage::ObjectType && QUrl(format.anchorHref()) == QUrl(anchor)) {
+        imagePath = format.property(ChatImage::Path).toString();
+        break;
+      }
+    }
+  }
+  if(!imagePath.isEmpty()) {
+    QMenu imageMenu(this);
+    QAction* copyImage = imageMenu.addAction(tr("Copy Image"));
+    QAction* openFolder = imageMenu.addAction(tr("Open File Location"));
+    const bool available = QFileInfo(imagePath).isFile();
+    copyImage->setEnabled(available);
+    openFolder->setEnabled(available);
+    QAction* selected = imageMenu.exec(viewport()->mapToGlobal(pos));
+    if(selected == copyImage) {
+      const QImage image = ChatImage::original(imagePath);
+      if(image.isNull()) {
+        QMessageBox::warning(this, tr("Cannot copy image"),
+          tr("The original image is unavailable or exceeds the image size limit."));
+        return;
+      }
+      QApplication::clipboard()->setImage(image);
+    } else if(selected == openFolder) {
+      const QFileInfo file(imagePath);
+      if(!file.isFile() || !QDesktopServices::openUrl(QUrl::fromLocalFile(file.absolutePath())))
+        QMessageBox::warning(this, tr("Cannot open file location"),
+          tr("The image file or its folder is unavailable."));
+    }
+    return;
+  }
   QTextCursor cursor = textCursor();
   copyAction->setEnabled(cursor.selectionStart() != cursor.selectionEnd());
   copyLinkAction->setEnabled(linkHovered);
   //	Copy Link is currently hidden since it performs the same action as regular Copy
   copyLinkAction->setVisible(false);
   selectAllAction->setEnabled(!document()->isEmpty());
-  contextMenu->exec(mapToGlobal(pos));
+  contextMenu->exec(viewport()->mapToGlobal(pos));
 }
 
 void lmcMessageLog::copyAction_triggered(void) {

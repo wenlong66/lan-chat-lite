@@ -78,6 +78,7 @@ protected:
   void changeEvent(QEvent* pEvent);
   void closeEvent(QCloseEvent* pEvent);
   void dragEnterEvent(QDragEnterEvent* pEvent);
+  void dragMoveEvent(QDragMoveEvent* pEvent);
   void dropEvent(QDropEvent* pEvent);
 
 private slots:
@@ -103,6 +104,7 @@ private:
   void sendFile(QString* lpszFilePath);
   void sendFolder(QString* lpszFolderPath);
   void sendObject(MessageType type, QString* lpszPath);
+  QStringList droppedPaths(const QMimeData* mimeData) const;
   void encodeMessage(QString* lpszMessage);
   void processFileOp(XmlMessage* pMessage);
   void appendMessageLog(MessageType type, QString* lpszUserId, QString* lpszUserName, XmlMessage* pMessage);

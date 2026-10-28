@@ -1347,8 +1347,8 @@ Copyright (C) 2010-2012 Qualia Digital Solutions.
     </message>
     <message>
         <location filename="../lmc/src/gui/chat/chatwindow.cpp" line="678"/>
-        <source>Type a message, or paste an image...</source>
-        <translation>输入消息，或粘贴图片...</translation>
+        <source>Type a message, paste an image, or drop files/folders...</source>
+        <translation>输入消息、粘贴图片，或拖入文件/文件夹...</translation>
     </message>
     <message>
         <location filename="../lmc/src/gui/chat/chatwindow.cpp" line="800"/>
@@ -1636,6 +1636,30 @@ File may not exist, or may not be compatible with this version of %2.</source>
 </context>
 <context>
     <name>lmcMessageLog</name>
+    <message>
+        <source>Copy Image</source>
+        <translation>复制图片</translation>
+    </message>
+    <message>
+        <source>Open File Location</source>
+        <translation>打开文件位置</translation>
+    </message>
+    <message>
+        <source>Cannot copy image</source>
+        <translation>无法复制图片</translation>
+    </message>
+    <message>
+        <source>The original image is unavailable or exceeds the image size limit.</source>
+        <translation>原图不可用，或超过图片大小限制。</translation>
+    </message>
+    <message>
+        <source>Cannot open file location</source>
+        <translation>无法打开文件位置</translation>
+    </message>
+    <message>
+        <source>The image file or its folder is unavailable.</source>
+        <translation>图片文件或所在文件夹不可用。</translation>
+    </message>
     <message>
         <source>Image to %1</source>
         <translation>发送给 %1 的图片</translation>

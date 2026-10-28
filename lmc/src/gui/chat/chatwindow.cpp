@@ -27,8 +27,10 @@
 #include <QMimeData>
 #include <QMessageBox>
 #include <QTemporaryDir>
+#include <algorithm>
 #include "chatwindow.h"
 #include "gui/widgets/actionhelper.h"
+#include "gui/widgets/attachmentdialog.h"
 #include "gui/widgets/clipboardimage.h"
 #include "gui/widgets/chatimage.h"
 
@@ -73,7 +75,9 @@ lmcChatWindow::lmcChatWindow(QWidget* parent, Qt::WindowFlags flags)
 
   pMessageLog = new lmcMessageLog(ui.wgtLog);
   ui.logLayout->addWidget(pMessageLog);
-  pMessageLog->setAcceptDrops(false);
+  pMessageLog->setAcceptDrops(true);
+  pMessageLog->viewport()->installEventFilter(this);
+  ui.txtMessage->viewport()->installEventFilter(this);
   connect(pMessageLog, &lmcMessageLog::messageSent, this, &lmcChatWindow::log_sendMessage);
 
   int bottomPanelHeight = ui.txtMessage->minimumHeight() + ui.lblDividerBottom->minimumHeight() +
@@ -331,6 +335,23 @@ void lmcChatWindow::settingsChanged(void) {
 }
 
 bool lmcChatWindow::eventFilter(QObject* pObject, QEvent* pEvent) {
+  if((pObject == ui.txtMessage->viewport() || pObject == pMessageLog->viewport()) &&
+     (pEvent->type() == QEvent::DragEnter || pEvent->type() == QEvent::DragMove ||
+      pEvent->type() == QEvent::Drop) &&
+     static_cast<QDropEvent*>(pEvent)->mimeData()->hasUrls()) {
+    const auto urls = static_cast<QDropEvent*>(pEvent)->mimeData()->urls();
+    if(std::none_of(urls.cbegin(), urls.cend(), [](const QUrl& url) { return url.isLocalFile(); }))
+      return false;
+    // QTextEdit otherwise inserts file URLs as text instead of sending them.
+    if(pEvent->type() == QEvent::DragEnter)
+      dragEnterEvent(static_cast<QDragEnterEvent*>(pEvent));
+    else if(pEvent->type() == QEvent::DragMove)
+      dragMoveEvent(static_cast<QDragMoveEvent*>(pEvent));
+    else
+      dropEvent(static_cast<QDropEvent*>(pEvent));
+    return true;
+  }
+
   if(pEvent->type() == QEvent::KeyPress) {
     QKeyEvent* pKeyEvent = static_cast<QKeyEvent*>(pEvent);
     if(pObject == ui.txtMessage) {
@@ -388,42 +409,47 @@ void lmcChatWindow::closeEvent(QCloseEvent* pEvent) {
 }
 
 void lmcChatWindow::dragEnterEvent(QDragEnterEvent* pEvent) {
-  if(pEvent->mimeData()->hasFormat("text/uri-list")) {
-    //  Check if the remote user has file transfer capability
-    if((peerCaps.value(peerId) & UC_File) != UC_File)
-      return;
+  dragMoveEvent(pEvent);
+}
 
-    QList<QUrl> urls = pEvent->mimeData()->urls();
-    if(urls.isEmpty())
-      return;
+void lmcChatWindow::dragMoveEvent(QDragMoveEvent* pEvent) {
+  if(pEvent->possibleActions().testFlag(Qt::CopyAction) && !droppedPaths(pEvent->mimeData()).isEmpty()) {
+    pEvent->setDropAction(Qt::CopyAction);
+    pEvent->accept();
+  } else
+    pEvent->ignore();
+}
 
-    QString fileName = urls.first().toLocalFile();
-    if(fileName.isEmpty())
-      return;
-
-    pEvent->acceptProposedAction();
+QStringList lmcChatWindow::droppedPaths(const QMimeData* mimeData) const {
+  QStringList paths;
+  if(!bConnected)
+    return paths;
+  const uint caps = peerCaps.value(peerId);
+  for(const QUrl& url : mimeData->urls()) {
+    if(!url.isLocalFile())
+      continue;
+    const QString path = url.toLocalFile();
+    const QFileInfo info(path);
+    if((info.isFile() && (caps & UC_File)) || (info.isDir() && (caps & UC_Folder)))
+      paths.append(path);
   }
+  return paths;
 }
 
 void lmcChatWindow::dropEvent(QDropEvent* pEvent) {
-  QList<QUrl> urls = pEvent->mimeData()->urls();
-  if(urls.isEmpty())
+  const QStringList paths = droppedPaths(pEvent->mimeData());
+  if(!pEvent->possibleActions().testFlag(Qt::CopyAction) || paths.isEmpty()) {
+    pEvent->ignore();
     return;
-
-  for(QUrl url : urls) {
-    QString path = url.toLocalFile();
-    if(path.isEmpty())
-      continue;
-
-    QFileInfo fileInfo(path);
-    if(!fileInfo.exists())
-      continue;
-
-    if(fileInfo.isFile())
-      sendFile(&path);
-    else if(fileInfo.isDir())
-      sendFolder(&path);
   }
+  for(QString path : paths) {
+    if(QFileInfo(path).isDir())
+      sendFolder(&path);
+    else
+      sendFile(&path);
+  }
+  pEvent->setDropAction(Qt::CopyAction);
+  pEvent->accept();
 }
 
 void lmcChatWindow::btnFont_clicked(void) {
@@ -445,27 +471,20 @@ void lmcChatWindow::btnFontColor_clicked(void) {
 
 void lmcChatWindow::btnFile_clicked(void) {
   QString dir = pSettings->value(IDS_OPENPATH, IDS_OPENPATH_VAL).toString();
-  // E2E (Robot through the in-process lmc-agent) cannot drive the
-  // platform-native open panel (NSOpenPanel on macOS is outside the Qt
-  // object tree): force the Qt dialog when the harness asks for it.
-  // Unset => production behavior on every OS.
-  QFileDialog::Options options;
-  if(!qEnvironmentVariableIsEmpty("LMC_NON_NATIVE_DIALOGS"))
-    options |= QFileDialog::DontUseNativeDialog;
-  QString fileName = QFileDialog::getOpenFileName(this, QString(), dir, QString(), nullptr, options);
-  if(!fileName.isEmpty()) {
-    pSettings->setValue(IDS_OPENPATH, QFileInfo(fileName).dir().absolutePath());
+  const QStringList paths = AttachmentDialog::files(this, dir);
+  if(!paths.isEmpty())
+    pSettings->setValue(IDS_OPENPATH, QFileInfo(paths.first()).absolutePath());
+  for(QString fileName : paths)
     sendFile(&fileName);
-  }
 }
 
 void lmcChatWindow::btnFolder_clicked(void) {
   QString dir = pSettings->value(IDS_OPENPATH, IDS_OPENPATH_VAL).toString();
-  QString path = QFileDialog::getExistingDirectory(this, QString(), dir, QFileDialog::ShowDirsOnly);
-  if(!path.isEmpty()) {
-    pSettings->setValue(IDS_OPENPATH, QFileInfo(path).absolutePath());
+  const QStringList paths = AttachmentDialog::folders(this, dir);
+  if(!paths.isEmpty())
+    pSettings->setValue(IDS_OPENPATH, QFileInfo(paths.first()).absolutePath());
+  for(QString path : paths)
     sendFolder(&path);
-  }
 }
 
 void lmcChatWindow::btnSave_clicked(void) {
@@ -702,7 +721,7 @@ void lmcChatWindow::setUIText(void) {
   pTransferAction->setToolTip(tr("View File Transfers"));
   ui.btnSend->setText(tr("Send"));
   ui.btnSend->setToolTip(tr("Send message"));
-  ui.txtMessage->setPlaceholderText(tr("Type a message, or paste an image..."));
+  ui.txtMessage->setPlaceholderText(tr("Type a message, paste an image, or drop files/folders..."));
   ui.txtMessage->setAccessibleName(tr("Send message"));
 #ifdef LMC_LITE_BUILD
   pFileAction->setIconText(tr("File"));

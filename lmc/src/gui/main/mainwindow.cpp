@@ -30,6 +30,7 @@
 #include <memory>
 #include "mainwindow.h"
 #include "gui/widgets/actionhelper.h"
+#include "gui/widgets/attachmentdialog.h"
 #include "gui/chat/messagelog.h"
 #include "messaging/history.h"
 
@@ -670,21 +671,21 @@ void lmcMainWindow::userBroadcastAction_triggered(void) {
 void lmcMainWindow::userFileAction_triggered(void) {
   QString userId = ui.tvUserList->currentItem()->data(0, IdRole).toString();
   QString dir = pSettings->value(IDS_OPENPATH, IDS_OPENPATH_VAL).toString();
-  QString fileName = QFileDialog::getOpenFileName(this, QString(), dir);
-  if(!fileName.isEmpty()) {
-    pSettings->setValue(IDS_OPENPATH, QFileInfo(fileName).dir().absolutePath());
+  const QStringList paths = AttachmentDialog::files(this, dir);
+  if(!paths.isEmpty())
+    pSettings->setValue(IDS_OPENPATH, QFileInfo(paths.first()).absolutePath());
+  for(QString fileName : paths)
     sendMessage(MT_File, &userId, &fileName);
-  }
 }
 
 void lmcMainWindow::userFolderAction_triggered(void) {
   QString userId = ui.tvUserList->currentItem()->data(0, IdRole).toString();
   QString dir = pSettings->value(IDS_OPENPATH, IDS_OPENPATH_VAL).toString();
-  QString path = QFileDialog::getExistingDirectory(this, QString(), dir, QFileDialog::ShowDirsOnly);
-  if(!path.isEmpty()) {
-    pSettings->setValue(IDS_OPENPATH, QFileInfo(path).absolutePath());
+  const QStringList paths = AttachmentDialog::folders(this, dir);
+  if(!paths.isEmpty())
+    pSettings->setValue(IDS_OPENPATH, QFileInfo(paths.first()).absolutePath());
+  for(QString path : paths)
     sendMessage(MT_Folder, &userId, &path);
-  }
 }
 
 void lmcMainWindow::userInfoAction_triggered(void) {

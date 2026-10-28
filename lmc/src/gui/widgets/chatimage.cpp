@@ -9,6 +9,24 @@
 
 namespace {
 constexpr qint64 MaxEncodedBytes = ClipboardImage::MaxDecodedBytes + 1024 * 1024;
+
+QImage readPng(const QString& path, bool scaled) {
+  const QFileInfo file(path);
+  if(!file.isFile() || file.size() <= 0 || file.size() > MaxEncodedBytes)
+    return QImage();
+  QImageReader reader(path, "png");
+  reader.setAutoDetectImageFormat(false);
+  const QSize size = reader.size();
+  const qint64 pixels = qint64(size.width()) * size.height();
+  const int depth = QImage(1, 1, reader.imageFormat()).depth();
+  if(!size.isValid() || pixels <= 0 || pixels > ClipboardImage::MaxPixels || depth <= 0 ||
+     pixels * qMax(4, depth / 8) > ClipboardImage::MaxDecodedBytes)
+    return QImage();
+  if(scaled)
+    reader.setScaledSize(size.boundedTo(size.scaled(320, 240, Qt::KeepAspectRatio)));
+  const QImage image = reader.read();
+  return ClipboardImage::isWithinLimits(image) ? image : QImage();
+}
 }
 
 bool ChatImage::isImageMessage(XmlMessage* message) {
@@ -31,23 +49,18 @@ QImage ChatImage::thumbnail(const QString& path) {
   if(const QImage* cached = cache.object(key))
     return *cached;
 
-  QImageReader reader(path, "png");
-  reader.setAutoDetectImageFormat(false);
-  const QSize size = reader.size();
-  const qint64 pixels = qint64(size.width()) * size.height();
-  const int depth = QImage(1, 1, reader.imageFormat()).depth();
-  if(!size.isValid() || pixels <= 0 || pixels > ClipboardImage::MaxPixels || depth <= 0 ||
-     pixels * qMax(4, depth / 8) > ClipboardImage::MaxDecodedBytes)
-    return QImage();
-  reader.setScaledSize(size.boundedTo(size.scaled(320, 240, Qt::KeepAspectRatio)));
-  QImage image = reader.read();
-  if(!ClipboardImage::isWithinLimits(image))
+  QImage image = readPng(path, true);
+  if(image.isNull())
     return QImage();
   image = image.scaled(image.size().boundedTo(QSize(320, 240)),
                        Qt::KeepAspectRatio, Qt::SmoothTransformation)
             .convertToFormat(QImage::Format_ARGB32);
   cache.insert(key, new QImage(image), int(image.sizeInBytes()));
   return image;
+}
+
+QImage ChatImage::original(const QString& path) {
+  return readPng(path, false);
 }
 
 QSizeF ChatImage::intrinsicSize(QTextDocument* doc, int, const QTextFormat& format) {

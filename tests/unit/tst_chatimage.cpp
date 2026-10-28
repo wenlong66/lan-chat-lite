@@ -8,6 +8,11 @@
 #include <QMessageBox>
 #include <QTimer>
 #include <QScrollBar>
+#include <QClipboard>
+#include <QContextMenuEvent>
+#include <QMimeData>
+#include <QScopeGuard>
+#include <memory>
 #include "network/netstreamer.h"
 #include "gui/chat/chatwindow.h"
 #include "gui/widgets/chatimage.h"
@@ -19,6 +24,40 @@ class ChatImageTest : public QObject {
 private:
   QTemporaryDir temporary;
   QUrl openedUrl;
+  std::unique_ptr<QMimeData> savedClipboard;
+
+  QPoint imagePoint(lmcMessageLog& log, const QString& path) {
+    // Use the right half too: cursorForPosition can return the position after an object.
+    for(int y = 0; y < log.viewport()->height(); y += 4)
+      for(int x = log.viewport()->width() - 1; x >= 0; x -= 4)
+        if(QUrl(log.anchorAt(QPoint(x, y))).toLocalFile() == path)
+          return QPoint(x, y);
+    return QPoint(-1, -1);
+  }
+
+  bool contextAction(lmcMessageLog& log, const QPoint& pos, const QString& text,
+                     bool trigger = true, bool* enabled = nullptr) {
+    bool found = false;
+    QTimer::singleShot(0, &log, [&] {
+      QMenu* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+      if(!menu)
+        return;
+      for(QAction* action : menu->actions()) {
+        if(action->text() != text || !action->isVisible())
+          continue;
+        found = true;
+        if(enabled)
+          *enabled = action->isEnabled();
+        if(trigger && action->isEnabled())
+          QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, menu->actionGeometry(action).center());
+        break;
+      }
+      menu->close();
+    });
+    QContextMenuEvent event(QContextMenuEvent::Mouse, pos, log.viewport()->mapToGlobal(pos));
+    QCoreApplication::sendEvent(log.viewport(), &event);
+    return found;
+  }
 
   void initLog(lmcMessageLog& log) {
     log.localId = "local";
@@ -69,6 +108,11 @@ private:
 private slots:
   void initTestCase() {
     QVERIFY(temporary.isValid());
+    savedClipboard = std::make_unique<QMimeData>();
+    const QMimeData* currentClipboard = QApplication::clipboard()->mimeData();
+    if(currentClipboard)
+      for(const QString& format : currentClipboard->formats())
+        savedClipboard->setData(format, currentClipboard->data(format));
     QStandardPaths::setTestModeEnabled(true);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, temporary.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, temporary.path());
@@ -80,6 +124,108 @@ private slots:
   }
 
   void captureUrl(const QUrl& url) { openedUrl = url; }
+
+  void cleanupTestCase() {
+    QApplication::clipboard()->setMimeData(savedClipboard.release());
+  }
+
+  void imageContextMenuCopiesOriginalAndOpensFolder_data() {
+    QTest::addColumn<bool>("sending");
+    QTest::newRow("sent") << true;
+    QTest::newRow("received") << false;
+  }
+
+  void imageContextMenuCopiesOriginalAndOpensFolder() {
+    QFETCH(bool, sending);
+    lmcMessageLog log;
+    initLog(log);
+    auto other = request(png(), FM_Send);
+    other.removeData(XN_FILEID);
+    other.addData(XN_FILEID, "other-image");
+    append(log, other);
+    const QString folder = temporary.filePath(QString::fromUtf8("图片目录 # &"));
+    QVERIFY(QDir().mkpath(folder));
+    const QString path = QDir(folder).filePath("shot #1 & test.png");
+    QImage original(800, 400, QImage::Format_ARGB32);
+    original.fill(QColor(10, 120, 220, 128));
+    original.setPixelColor(600, 250, QColor(250, 30, 50));
+    QVERIFY(original.save(path));
+    auto message = request(path, sending ? FM_Send : FM_Receive);
+    append(log, message);
+    log.updateFileMessage(sending ? FM_Send : FM_Receive, FO_Complete, "image-1", path);
+    log.show();
+    QTest::qWait(20);
+    const QPoint pos = imagePoint(log, path);
+    QVERIFY(pos.x() >= 0);
+    QApplication::clipboard()->setText("previous clipboard");
+    QVERIFY(contextAction(log, pos, "Copy Image"));
+    QVERIFY(QApplication::clipboard()->mimeData()->hasImage());
+    const QImage copied = QApplication::clipboard()->image();
+    QCOMPARE(copied.size(), original.size());
+    QCOMPARE(copied.pixelColor(600, 250), original.pixelColor(600, 250));
+    QCOMPARE(copied.pixelColor(20, 20), original.pixelColor(20, 20));
+    lmcMessageEdit editor;
+    QSignalSpy pasted(&editor, &lmcMessageEdit::imagePasted);
+    editor.paste();
+    QCOMPARE(pasted.count(), 1);
+    QCOMPARE(pasted.first().first().value<QImage>().size(), original.size());
+
+    openedUrl.clear();
+    QDesktopServices::setUrlHandler("file", this, "captureUrl");
+    const auto restoreHandler = qScopeGuard([] { QDesktopServices::unsetUrlHandler("file"); });
+    QVERIFY(contextAction(log, pos, "Open File Location"));
+    QCOMPARE(openedUrl.toLocalFile(), folder);
+    QVERIFY(!contextAction(log, QPoint(5, log.viewport()->height() - 5), "Copy Image", false));
+    QVERIFY(!contextAction(log, QPoint(5, log.viewport()->height() - 5), "Open File Location", false));
+
+    QVERIFY(QFile::remove(path));
+    bool enabled = true;
+    QVERIFY(contextAction(log, pos, "Copy Image", false, &enabled));
+    QVERIFY(!enabled);
+    QVERIFY(contextAction(log, pos, "Open File Location", false, &enabled));
+    QVERIFY(!enabled);
+  }
+
+  void textContextMenuStillCopiesText() {
+    lmcMessageLog log;
+    initLog(log);
+    log.setPlainText("ordinary chat text");
+    log.show();
+    QTest::qWait(20);
+    log.selectAll();
+    QCOMPARE(log.textCursor().selectedText(), QStringLiteral("ordinary chat text"));
+    QVERIFY(contextAction(log, QPoint(20, 10), "&Copy"));
+    QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("ordinary chat text"));
+  }
+
+  void corruptOriginalDoesNotReplaceClipboard() {
+    lmcMessageLog log;
+    initLog(log);
+    const QString path = png();
+    auto message = request(path, FM_Send);
+    append(log, message);
+    log.show();
+    QTest::qWait(20);
+    const QPoint pos = imagePoint(log, path);
+    QVERIFY(pos.x() >= 0);
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    file.write("broken PNG");
+    file.close();
+    QApplication::clipboard()->setText("keep clipboard unchanged");
+    bool warned = false;
+    QTimer closeWarning;
+    connect(&closeWarning, &QTimer::timeout, this, [&] {
+      if(auto* warning = qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+        warned = true;
+        warning->accept();
+      }
+    });
+    closeWarning.start(10);
+    QVERIFY(contextAction(log, pos, "Copy Image"));
+    QVERIFY(warned);
+    QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("keep clipboard unchanged"));
+  }
 
   void receivesImageAutomaticallyButWaitsForCompletion() {
     lmcMessageLog log;
@@ -181,11 +327,13 @@ private slots:
     file.write("not a PNG");
     file.close();
     QVERIFY(ChatImage::thumbnail(path).isNull());
+    QVERIFY(ChatImage::original(path).isNull());
     QImage oversized(4096, 4097, QImage::Format_Mono);
     oversized.fill(0);
     const QString hugePath = temporary.filePath("huge.png");
     QVERIFY(oversized.save(hugePath));
     QVERIFY(ChatImage::thumbnail(hugePath).isNull());
+    QVERIFY(ChatImage::original(hugePath).isNull());
     lmcMessageLog log;
     initLog(log);
     auto message = request(path);

@@ -18,6 +18,7 @@ public:
          Path = QTextFormat::UserProperty + 1, Size };
   static bool isImageMessage(XmlMessage* message);
   static QImage thumbnail(const QString& path);
+  static QImage original(const QString& path);
   QSizeF intrinsicSize(QTextDocument* doc, int pos, const QTextFormat& format) override;
   void drawObject(QPainter* painter, const QRectF& rect, QTextDocument* doc,
                   int pos, const QTextFormat& format) override;

@@ -856,3 +856,91 @@ inline-images1 版本替换到 `/Applications/LanChat Lite.app`。旧版完整�
 已打开新版并通过原生界面树及截图确认主窗口正常显示：原昵称、头像、在线状态与
 联系人区域可见。此时界面提示暂未发现设备；没有发送测试消息或宣称双机传图已通过。
 安装和备份核验记录位于 `artifacts/chatimage-install-20261028/install.json`。
+
+## 2026-10-28：截图右键复制图片与打开文件位置
+
+用户确认聊天内截图可见后，要求右键复制与打开文件位置。本轮基于 `50838a3`，
+只为聊天内图片增加独立右键菜单：复制完整原图到系统剪贴板，或调用系统文件管理器
+打开该图所在目录（与文件传输窗口的打开目录行为一致）。文字区域保留原有菜单。
+菜单按实际点击的图片取路径，支持滚动、连续多图和中文/空格/特殊字符路径；
+原图已删除时禁用两项操作，解码失败时提示且保留原剪贴板内容。
+
+原图读取复用缩略图的 PNG 校验和 16 MiPixels / 64 MiB 解码上限，不把缩略图当原图复制。
+复制时才解码完整图片，8 MiB 缩略图缓存不变。网络协议和传输所有权没有变化。
+Qt 接口通过 Context7 CLI 核对：QTextEdit `anchorAt`、QUrl `fromLocalFile`、QClipboard `setImage`。
+
+### 构建与测试
+
+环境：macOS 26.7 arm64、Qt 6.8.3、Release，生产测试代理和 LMM 继续关闭。
+命令使用已配置的本地工具链，Qt 编译与原生 GUI 测试在沙箱外运行。
+
+```bash
+artifacts/macos-build/venv/bin/cmake --build build-macos-arm64 --parallel 2
+artifacts/macos-build/venv/bin/ctest --test-dir build-macos-arm64 --output-on-failure --timeout 90
+QT_QPA_PLATFORM=cocoa build-macos-arm64/tests/tst_chatimage
+artifacts/macos-build/venv/bin/cmake --install build-macos-arm64 --prefix "$PWD/artifacts/chatimage-menu/package/lmc/release"
+```
+
+- 修改前新增的发送/接收图片菜单用例 **2 失败**：没有“复制图片”菜单项。
+- Release 构建通过；最终全部 CTest **7/7 通过，7.94 秒**。
+- `chatimage` 在 macOS 原生 Cocoa 下 **14 passed / 0 failed，1.947 秒**（含初始化与清理）。
+  实际右键事件与菜单点击覆盖发送/接收、多图目标选择、800×400 原图尺寸与关键像素/透明度、
+  从系统剪贴板粘贴到真实消息编辑器、目录 URL、空白区域菜单、缺失/损坏原图和普通文字复制。
+  目录打开通过截获 QDesktopServices 的本地目录 URL 验证，没有自动打开测试目录。
+- 文字复制测试最初在窗口显示前选中文字，被正常 resize 自动滚动清除选区；
+  已调整为显示后选中，再验证菜单复制，未为此改动生产文字复制行为。
+- 初次 Cocoa 套件虽最终通过，但在菜单回调内显示错误警告时耗时约 132.8 秒。
+  改为菜单关闭后再执行图片操作和显示警告，最终同套测试约 1.95 秒通过。
+  该结果支持避免嵌套原生菜单/弹窗的处理顺序，不声称定位 Qt/AppKit 内部根因。
+- 损坏 PNG 用例中的 libpng 报错、offscreen 菜单警告及 macOS 输入法 mach port 提示
+  未造成最终失败。原生测试结束时恢复原剪贴板 MIME 内容，未打印或保存其内容。
+- 日志保存在 `artifacts/chatimage-menu/`。本轮未新增依赖、未改传输所有权，未另跑 sanitizer。
+  Windows/Intel Mac、跨机收发及 QQ/微信等外部应用的实际粘贴仍待测。
+
+沿用此前用户要求直接替换并打开新版的授权，部署 Qt 依赖并通过 ad-hoc 严格签名检查后，
+正常退出旧进程，更新本机安装版。旧版保存在 `artifacts/chatimage-menu/previous-LanChat Lite.app`，
+未清空用户配置或聊天记录。安装核验见 `artifacts/chatimage-menu/installed.json`。
+
+更新后已打开应用，原生界面树和截图确认主窗口正常显示，昵称、头像和状态保留。
+安装版可执行文件 SHA-256：`befcefca81a18c36568ad61f06f4127844d617967be55f824ffe62b942b12087`。
+
+## 2026-10-28：文件/文件夹多选与拖入聊天框
+
+基于 `50838a3` 及工作区已有的截图右键改动，增加文件与文件夹多选发送；聊天工具栏、
+联系人菜单共享选择逻辑。文件继续使用原生多选对话框（测试环境可强制 Qt 对话框）；
+文件夹使用 Qt 对话框，在列表和详细视图启用 Ctrl/Cmd、Shift 多选。
+
+聊天输入区、消息区及窗口空白处接受本地文件/目录混合拖入，逐项沿用原来的发送请求。
+修正输入框将文件 URL 插入为文字的问题；只接管含本地路径的 URL 拖拽，普通文字与
+网页链接仍走原编辑流程。拖拽使用复制动作，保留文字草稿；PNG 不标记为截图消息。
+过滤不存在的路径与非本地 URL，并按连接状态和对端文件/目录能力判断是否接受。
+未修改 START2/DONE2、网络/磁盘处理或传输所有权，未额外运行 sanitizer。
+
+Qt 接口通过 find-docs / Context7 CLI 核对，使用 Qt 6.8 官方文档中的
+`QFileDialog::getOpenFileNames`、`selectedFiles` 和拖拽事件说明。
+环境为 macOS 26.7 arm64、Qt 6.8.3、Release；`LMC_BUILD_TEST_AGENT=OFF`、
+`LMC_BUILD_LMM=OFF`。沿用已有本地工具链，在沙箱外执行构建和测试：
+
+```bash
+artifacts/macos-build/venv/bin/cmake --build build-macos-arm64 --parallel 2
+artifacts/macos-build/venv/bin/ctest --test-dir build-macos-arm64 --output-on-failure --no-tests=error --timeout 90
+QT_QPA_PLATFORM=cocoa build-macos-arm64/tests/tst_attachmentinput
+git diff --check
+```
+
+- 修改前新增回归 **8 passed / 13 failed**，复现文件/目录单选、输入框吞掉拖入条目、
+  首 URL 无效导致整次拒绝，以及拖拽能力判断不完整。
+- 最终 Release 构建通过，仅有本次重编译文件中已有的 `setNamedColor` 弃用警告。
+  完整 CTest **8/8 通过，9.96 秒**；新增 `attachmentinput` 在 offscreen 下通过。
+- 原生 Cocoa 下 **35 passed / 0 failed，1.820 秒**（含初始化/清理）：鼠标配合
+  Ctrl/Cmd 在两种视图实际多选，覆盖聊天与联系人两个入口、文件/目录、取消选择、
+  上次目录与草稿保留；通过 Qt 拖拽事件覆盖三个聊天区域、中文/空格路径、混合条目、
+  无效/非本地 URL、对端能力、断线、复制动作、源文件保留和文字/网页链接编辑。
+- 文件选择测试强制使用 Qt 对话框；拖拽通过 Qt 事件投递验证请求类型与路径，
+  不等于已经验证 Finder/Explorer 原生拖拽、原生文件选择面板或完整双机传输。
+  既有真实 loopback START2/DONE2 回归随完整 CTest 通过，不把旧 mock 当作协议证据。
+- 日志保存在忽略目录 `artifacts/attachmentinput-*.log`；测试使用隔离设置和临时数据，
+  未修改已安装应用、用户配置、防火墙或系统设置。`git diff --check` 通过。
+
+Windows/Intel Mac 构建、Windows Explorer/Mac Finder 实际拖入、Shift 连选及实体
+Windows↔Mac 批量收发和哈希核对仍待测；本次代码和本地构建尚未替换已安装的旧版应用。

@@ -54,6 +54,7 @@ add_library(lmc_core STATIC
     src/network/webnetwork.cpp
     src/messaging/xmlmessage.cpp
     src/gui/widgets/actionhelper.h
+    src/gui/widgets/attachmentdialog.h
     src/gui/main/aboutdialog.h
     src/gui/chat/broadcastwindow.h
     src/gui/chat/chatdefinitions.h
