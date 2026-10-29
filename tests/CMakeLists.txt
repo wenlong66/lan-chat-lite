@@ -25,7 +25,7 @@ add_test(NAME crypto COMMAND tst_crypto)
 # no X server needed for headless crypto checks.
 set_tests_properties(crypto PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-set(LMC_REGRESSION_TESTS clipboardimage chatimage attachmentinput filetransfer filereceive translations)
+set(LMC_REGRESSION_TESTS clipboardimage chatimage attachmentinput filetransfer filereceive translations lannetwork)
 if(LMC_LITE_BUILD)
     list(APPEND LMC_REGRESSION_TESTS contactgroups)
 endif()

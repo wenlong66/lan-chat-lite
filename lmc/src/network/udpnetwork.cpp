@@ -22,12 +22,16 @@
 ****************************************************************************/
 
 
+#include <QNetworkProxy>
 #include "core/trace.h"
 #include "udpnetwork.h"
 
 lmcUdpNetwork::lmcUdpNetwork(void) {
   pUdpReceiver = new QUdpSocket(this);
   pUdpSender = new QUdpSocket(this);
+  // LAN discovery must stay direct, including when the system proxy changes.
+  pUdpReceiver->setProxy(QNetworkProxy::NoProxy);
+  pUdpSender->setProxy(QNetworkProxy::NoProxy);
   localId = QString();
   canReceive = false;
   isRunning = false;

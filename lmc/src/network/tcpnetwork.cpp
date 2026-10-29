@@ -23,6 +23,7 @@
 
 
 #include <QVariant>
+#include <QNetworkProxy>
 #include "core/trace.h"
 #include "tcpnetwork.h"
 #include "datagram.h"
@@ -37,6 +38,7 @@ lmcTcpNetwork::lmcTcpNetwork(void) {
   isRunning = false;
   ipAddress = QHostAddress::Null;
   server = new QTcpServer(this);
+  server->setProxy(QNetworkProxy::NoProxy);
   connect(server, &QTcpServer::newConnection, this, &lmcTcpNetwork::server_newConnection);
 }
 

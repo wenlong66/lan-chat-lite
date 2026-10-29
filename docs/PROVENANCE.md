@@ -46,3 +46,13 @@ decoded-image bound, and a 320×240 preview size. It follows the Qt
 [custom text object API](https://doc.qt.io/qt-6/qtextobjectinterface.html), with no
 third-party image code copied. Completed sent images are retained in `Sent Images`
 under the configured receive directory; stored chat logs retain local paths.
+
+## Direct LAN sockets (October 2026)
+
+Discovery UDP sockets, the TCP listener, and outgoing chat/file sockets explicitly
+use `QNetworkProxy::NoProxy`. This keeps LAN traffic direct when application/system
+proxies change and avoids the Qt 6.8.3 SOCKS5 UDP disconnect crash reproduced by
+`tests/unit/tst_lannetwork.cpp`. The local SOCKS5 test endpoint is original
+GPL-3.0-or-later code; no Qt implementation was copied or patched. Socket proxy
+selection follows the Qt 6.8 [QAbstractSocket](https://doc.qt.io/qt-6.8/qabstractsocket.html#setProxy)
+and [QTcpServer](https://doc.qt.io/qt-6.8/qtcpserver.html#setProxy) APIs.

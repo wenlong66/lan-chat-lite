@@ -25,6 +25,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QDataStream>
+#include <QNetworkProxy>
 #include "core/trace.h"
 #include "netstreamer.h"
 
@@ -74,6 +75,7 @@ void FileSender::init(void) {
     return;
   state = State::WaitingForStart;
   socket = new QTcpSocket(this);
+  socket->setProxy(QNetworkProxy::NoProxy);
   socket->setReadBufferSize(kControlLimit);
   connect(socket, &QAbstractSocket::connected, this, &FileSender::connected);
   connect(socket, &QAbstractSocket::disconnected, this, &FileSender::disconnected);
@@ -493,6 +495,7 @@ MsgStream::~MsgStream(void) {
 
 void MsgStream::init(void) {
   socket = new QTcpSocket(this);
+  socket->setProxy(QNetworkProxy::NoProxy);
   socket->setReadBufferSize(kMessageLimit + 4);
   connect(socket, &QAbstractSocket::connected, this, &MsgStream::connected);
   connect(socket, &QAbstractSocket::disconnected, this, &MsgStream::disconnected);

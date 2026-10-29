@@ -944,3 +944,63 @@ git diff --check
 
 Windows/Intel Mac 构建、Windows Explorer/Mac Finder 实际拖入、Shift 连选及实体
 Windows↔Mac 批量收发和哈希核对仍待测；本次代码和本地构建尚未替换已安装的旧版应用。
+
+## 2026-10-29：网络切换时 SOCKS5 UDP 崩溃
+
+用户反馈切换网络时出现 macOS“意外退出”。本机 10 月 28 日一份、10 月 29 日两份
+安装版崩溃报告均为 `EXC_BAD_ACCESS / SIGSEGV`，无效地址 `0x20`；前三层一致：
+`QList<QRingChunk>::isEmpty` → `QRingBuffer::clear` →
+`QSocks5SocketEnginePrivate::_q_emitPendingReadNotification`。
+
+新增 `lannetwork` 回归，在测试进程内指定本地 SOCKS5 代理，握手完成后断开 UDP
+关联的控制连接。未修改系统代理、网络、防火墙或真实用户配置。修改前运行：
+
+```bash
+build-macos-arm64/tests/tst_lannetwork udpSurvivesProxyDisconnect -nocrashhandler
+```
+
+退出码 **139**；生成的崩溃报告具有同一无效地址、前三层符号和符号偏移，与用户报告
+一致。仅将 UDP 收发 socket 设为 `NoProxy` 后，同一复现 **3 passed / 0 failed**
+（含初始化和清理，210 ms），且本地测试代理未收到关联请求。
+
+原因是局域网 socket 沿用 Qt 默认代理选择；SOCKS5 UDP 控制连接断开后，Qt 6.8.3
+上述通知路径访问仅为 TCP connect 模式分配的 `connectData->readBuffer`。
+已核对 [Qt 6.8.3 源码](https://github.com/qt/qtbase/blob/v6.8.3/src/network/socket/qsocks5socketengine.cpp)
+和 Context7 CLI 返回的 Qt 6.8 `setProxy` 文档。修复仅在 UDP 收发、TCP 监听、
+发起聊天和文件连接的五个创建点显式设置 `QNetworkProxy::NoProxy`，不修改 Qt、
+系统代理或传输协议。未更改传输所有权，未额外运行 sanitizer。
+
+环境：macOS 26.7 arm64、Qt 6.8.3、Apple clang、Release，基于 `8199240` 工作区；
+`LMC_BUILD_TEST_AGENT=OFF`、`LMC_BUILD_LMM=OFF`。使用已有本地工具链：
+
+```bash
+artifacts/macos-build/venv/bin/cmake --build build-macos-arm64 --parallel 2
+artifacts/macos-build/venv/bin/ctest --test-dir build-macos-arm64 --output-on-failure --no-tests=error --timeout 90
+git diff --check
+```
+
+- 首次在沙箱内构建时 Qt `uic -h` 报 `Incompatible processor ... neon`；改在沙箱外
+  执行后构建成功，测试也在沙箱外运行。
+- 新增 TCP 回归修改前 **3 项失败**，分别捕获监听、聊天、文件 socket 使用默认代理。
+- 最终 Release 构建成功，完整 CTest **9/9 通过，11.30 秒**。
+- `lannetwork` 覆盖代理断开复现、五轮 UDP 停止/启动及真实 loopback 收包、五轮 TCP
+  停止/启动及连接关闭，以及代理存在时聊天/文件直连握手。现有 START2/DONE2
+  真实 loopback 回归随完整套件通过，不以旧文件 mock 作为协议验证。
+- 复现与构建/测试日志位于忽略目录 `artifacts/network-switch/`。
+
+未自动切换用户正在使用的网络；真实 Wi-Fi/有线切换、VPN/TUN 路由变化、睡眠恢复、
+Windows/Intel Mac 和实体 Windows↔Mac 收发仍待测。本修复验证消除了已重现的代理
+断开崩溃，不将本地测试写成完整的实机网络切换验收。
+
+### 本机修复包与启动核验
+
+使用 `cmake --install` 暂存 Release，复用 `stage-mac-app` 部署 Qt 依赖；ad-hoc
+签名及 `codesign --verify --deep --strict` 通过。确认旧应用未运行后，完整备份到
+`artifacts/network-switch/previous-LanChat Lite.app`，再通过同卷重命名替换安装版，
+安装后再次校验签名和可执行文件哈希。备份与安装核验见
+`artifacts/network-switch/installed.json`；操作不涉及配置或聊天记录目录。
+
+安装版可执行文件 SHA-256：
+`c501faf876c29bcf93cc374b2ea6f14ae6a5ab20537ebf530a2a2b549f0640c7`。
+启动后通过原生界面树确认主窗口显示、在线状态与联系人区域可见；没有发送测试消息，
+真实网络切换仍等待用户复测。
