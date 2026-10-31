@@ -62,7 +62,7 @@ macOS 应用包现按随包词库生成 `CFBundleLocalizations`，使系统能�
 
 ## 4. 从源码构建
 
-先克隆本仓库，进入根目录。默认使用 Release 构建。Windows/macOS 的参考 Qt 版本为 **6.8.3**；Linux CI 使用 Ubuntu 24.04 的发行版 Qt 6。完整步骤以 [CI 工作流](../.github/workflows/ci.yml) 为准。
+先克隆本仓库，进入根目录。默认使用 Release 构建。Windows 参考 Qt **6.8.3**，macOS 参考 Qt **6.9.3**（至少 6.9.1，避免旧版 Cocoa 无障碍缓存释放崩溃）；Linux CI 使用 Ubuntu 24.04 的发行版 Qt 6。完整步骤以 [CI 工作流](../.github/workflows/ci.yml) 为准。
 
 ### Linux：本地开发与回归测试
 
@@ -116,11 +116,11 @@ Copy-Item "$lanChatCrt/*.dll" build/release/
 
 ### macOS：Apple clang＋Qt
 
-准备 Xcode Command Line Tools、CMake、Ninja、Qt 6.8.3（包含 Multimedia、ShaderTools、ImageFormats）和 OpenSSL。以下按 Qt 的常见安装路径示例，需按实际目录修改：
+准备 Xcode Command Line Tools、CMake、Ninja、Qt 6.9.3（包含 Multimedia、ShaderTools、ImageFormats）和 OpenSSL。macOS 构建会拒绝 Qt 6.9.1 之前的版本；Qt 6.8.3 可在联系人列表的无障碍对象释放时崩溃。以下按 Qt 的常见安装路径示例，需按实际目录修改：
 
 ```bash
 brew install cmake ninja openssl@3
-LCHAT_QT="$HOME/Qt/6.8.3/macos"
+LCHAT_QT="$HOME/Qt/6.9.3/macos"
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="$LCHAT_QT" \
   -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \

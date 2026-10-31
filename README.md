@@ -32,7 +32,7 @@
 
 ## 开发构建
 
-要求 C++17、CMake 3.16+、Qt 6（Core / Gui / Widgets / Network / Xml / LinguistTools / Test；Unix 还需要 Multimedia）、OpenSSL 开发库。参考 Windows/macOS Qt 版本为 6.8.3，Linux 使用 Ubuntu 24.04 的 Qt 6.4.2。
+要求 C++17、CMake 3.16+、Qt 6（Core / Gui / Widgets / Network / Xml / LinguistTools / Test；Unix 还需要 Multimedia）、OpenSSL 开发库。Windows 参考 Qt 6.8.3；macOS 使用 Qt 6.9.3，最低要求 6.9.1，以避开旧版 Cocoa 无障碍缓存释放崩溃；Linux 使用 Ubuntu 24.04 的 Qt 6.4.2。
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \

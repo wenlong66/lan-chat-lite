@@ -30,7 +30,12 @@
 #include "lmcstrings.h"
 
 //	Resource name definitions
+#ifdef Q_OS_MAC
+// A single full-size frame avoids Cocoa reducing the multi-frame ICO to 16 px.
+#define IDR_APPICON ":/icons/application-macos.png"
+#else
 #define IDR_APPICON ":/icons/application"
+#endif
 #define IDR_CLOSE ":/images/close"
 #define IDR_HISTORY ":/images/history"
 #define IDR_INFO ":/images/info"

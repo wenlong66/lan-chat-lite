@@ -1004,3 +1004,135 @@ Windows/Intel Mac 和实体 Windows↔Mac 收发仍待测。本修复验证消�
 `c501faf876c29bcf93cc374b2ea6f14ae6a5ab20537ebf530a2a2b549f0640c7`。
 启动后通过原生界面树确认主窗口显示、在线状态与联系人区域可见；没有发送测试消息，
 真实网络切换仍等待用户复测。
+
+## 2026-10-30：Cocoa 无障碍缓存释放崩溃
+
+用户再次报告“意外退出”。本次 02:01:41 的报告来自上一轮已安装的修复版：应用 UUID
+与安装版一致，可执行文件 SHA-256 仍为
+`c501faf876c29bcf93cc374b2ea6f14ae6a5ab20537ebf530a2a2b549f0640c7`。
+启动时间为前一天 16:45:20。本次属于另一条崩溃路径，主线程前八层为：
+
+```text
+objc_release +16
+__RELEASE_OBJECTS_IN_THE_ARRAY__ +116
+-[__NSArrayM dealloc] +148
+-[QMacAccessibilityElement dealloc] +60
+__RELEASE_OBJECTS_IN_THE_ARRAY__ +116
+-[__NSArrayM dealloc] +148
+AutoreleasePoolPage::releaseUntil +204
+objc_autoreleasePoolPop +244
+```
+
+### 原生复现与原因
+
+新增 `tst_macosaccessibility.mm`，使用 Cocoa 插件在测试进程内读取 QTreeWidget 的原生
+无障碍行和单元格，再清空模型、销毁窗口并排空 autorelease pool。仅使用合成联系人，
+不读取真实联系人、消息，也不修改系统辅助功能设置或启用 VoiceOver。
+
+```bash
+QT_QPA_PLATFORM=cocoa build-macos-arm64/tests/tst_macosaccessibility -nocrashhandler
+QT_QPA_PLATFORM=cocoa build-macos-arm64/tests/tst_macosaccessibility contactRowsSurviveModelReset:single-column -nocrashhandler
+```
+
+- Qt 6.8.3 下，两次独立运行均退出 **139**；最小化为单列也立即崩溃，原生报告前八层
+  与本次用户报告一致，包括各符号偏移。
+- 在测试进程增加 `NSZombieEnabled=YES` 后退出 **133**，明确打印
+  `-[QMacAccessibilityElement release]: message sent to deallocated instance`。
+- 官方 [QTBUG-134784](https://qt-project.atlassian.net/browse/QTBUG-134784)
+  及 [6.9 分支修复](https://github.com/qt/qtbase/commit/ae0bd2c52d5e7f112dcace027b4d279b532e1b86)
+  对应同一缓存引用计数缺陷；已核对 Qt 6.9.3 源码包含该修复。
+  问题追踪器列出的修复版本包括 6.8.4 商业 LTS 和公开的 6.9.1。
+- 保持测试源码不变，仅换 Qt 6.9.3，独立复现 **4 passed / 0 failed，866 ms**
+  （含初始化和清理），单列/双列各 10 轮模型清空及原生对象释放通过。
+
+修复方式是 macOS 参考构建升级为 Qt 6.9.3，并在 CMake 拒绝 6.9.1 之前的 macOS
+构建；Windows、Linux 的 Qt 版本保持原有配置。未给应用增加拦截崩溃的异常处理，
+未禁用无障碍功能，未修改 Qt 源码或上一轮局域网直连修复。CI 增加原生 Cocoa 测试，
+不会以 offscreen 代替该回归。
+
+### 工具链准备中的限制
+
+默认 aqt 镜像下载速度低，停止后换镜像。安装器请求新镜像时返回错误页面，SHA-256
+校验失败，未禁用校验。随后使用 curl 下载八个 Qt 归档，逐个对照 Qt 官方 `.sha256`
+核验，再解包并用 aqt 的 Updater 做路径重定位。完整清单见忽略目录中的
+`artifacts/accessibility-crash/qt-archives.json`。
+
+首次手动解包使用了错误的目录层级，Updater 因缺少预期的 `mkspecs/qconfig.pri` 失败。
+自动审批拒绝清理共享 Qt 根目录，担心影响已有依赖；已放弃该清理，改用独立的
+`artifacts/accessibility-crash/Qt/6.9.3/macos`，后续构建不使用误解包目录。
+旧 Qt 工具链仍保留。日志位于 `artifacts/accessibility-crash/`，均不纳入提交。
+
+### 完整构建、打包及安装核验
+
+环境：macOS 26.7 arm64、Apple clang 21、Qt 6.9.3、Release，基于 `679f76c`；
+生产测试代理、LMM 保持关闭。使用独立构建目录 `build-macos-arm64-qt693`，Qt 前缀指向
+上述隔离目录；构建、测试及签名在沙箱外执行。主要验证命令：
+
+```bash
+artifacts/macos-build/venv/bin/cmake --build build-macos-arm64-qt693 --parallel 2
+artifacts/macos-build/venv/bin/ctest --test-dir build-macos-arm64-qt693 --output-on-failure --no-tests=error --timeout 90
+QT_QPA_PLATFORM=cocoa build-macos-arm64-qt693/tests/tst_chatimage
+QT_QPA_PLATFORM=cocoa build-macos-arm64-qt693/tests/tst_attachmentinput
+git diff --check
+```
+
+- Release 构建成功；日志中的 QColor、OpenSSL 弃用警告来自原有代码，未为本次问题
+  修改相邻 API。
+- 完整 CTest **10/10 通过，31.87 秒**，其中 `macosaccessibility` 强制 Cocoa 并通过；
+  原来的代理断开、START2/DONE2、图片及其他回归保持通过。
+- 原生 Cocoa 图片菜单测试 **14 passed / 0 failed，2073 ms**；附件选择/拖拽测试
+  **35 passed / 0 failed，1134 ms**（均含初始化与清理）。
+- 用旧 Qt 6.8.3 重新配置时，CMake 按预期明确报错并拒绝构建，避免未来再打入旧版本。
+- `stage-mac-app` 部署后，包内 QtCore、QtGui、QtWidgets、QtNetwork 的版本均为
+  **6.9.3**。严格签名通过；包内 Cocoa arm64 插件 UUID 为
+  `8F15D38E-B6EE-3B49-BB29-DFC8E6B55B1E`。
+- 再以 `DYLD_FRAMEWORK_PATH` 和 `QT_QPA_PLATFORM_PLUGIN_PATH` 指向实际应用包，运行
+  同一原生回归，**4 passed / 0 failed，693 ms**。dyld/plugin 日志明确确认 QtGui 和
+  `libqcocoa.dylib` 从包内加载，未仅验证开发机上的 Qt。
+
+使用旧应用自身 `/term` 正常退出，备份到
+`artifacts/accessibility-crash/previous-LanChat Lite.app` 后替换本机安装版。
+新包与安装版的严格签名、可执行文件哈希及 Qt 版本核验通过，详情见
+`artifacts/accessibility-crash/installed.json`。新可执行文件 SHA-256：
+`207acd7f5d4ca0e80435b2b91a2a694c42df097e7558ce6825660a489d0a372c`。
+启动后通过原生界面树确认主窗口、在线状态、联系人区域和操作按钮正常显示；没有
+发送测试消息或读写聊天记录目录。
+
+Windows/Intel Mac 本轮构建及远端 CI 尚未执行；实际跨机收发、真实网络切换、睡眠恢复
+和长时间常驻仍待测，不将本轮通过写成 24 小时稳定性保证。
+
+## 2026-10-31：启动后 Dock 图标变模糊
+
+用户提供启动前后的 Dock 截图：未运行时清晰，启动后图标像素化。当前应用包 ICNS
+具备最高 1024 px 的图像，ICO 也确实包含 16、24、32、48、64、128、256 px，
+不是原始素材缺少高清尺寸。
+
+新增 `macosicon` 原生 Cocoa 回归，调用与应用启动相同的
+`QApplication::setWindowIcon(QIcon(IDR_APPICON))`，直接检查
+`NSApp.applicationIconImage` 的实际表示尺寸。环境为 macOS 26.7 arm64 / Qt 6.9.3：
+
+```bash
+QT_QPA_PLATFORM=cocoa build-macos-arm64-qt693/tests/tst_macosicon
+```
+
+- 修改前 Qt 能列出 ICO 的完整七档尺寸，但原生 Dock 图像最大仅 **16 px**，用例失败。
+- 尝试保留资源 `.ico` 后缀，原生结果仍为 16 px，已撤回这一无效实验。
+- 仅将 macOS 的 `IDR_APPICON` 指向已有的原始 256×256 PNG，原生 Dock 图像恢复为
+  **256 px**，用例 **3 passed / 0 failed，16 ms**（含初始化和清理）。
+
+未修改设计、放大小图、生成新素材、改动 Dock 设置或清理系统图标缓存；包内 ICNS
+和其他平台的 ICO 保持原样。测试编入 macOS 的 Cocoa 套件，避免只检查资源文件尺寸
+而漏掉运行时转换后的图像。此前尚未提交的 Qt 6.9.3 与无障碍回归改动保留。
+
+Release 完整构建及全部 CTest **11/11 通过，16.93 秒**，包括网络、原生无障碍及
+新增 Dock 图标回归。命令沿用 `build-macos-arm64-qt693`，构建与测试在沙箱外执行。
+`stage-mac-app` 部署 Qt 6.9.3 并通过严格签名检查；打包后的 `lmc.rcc` 与构建产物
+SHA-256 一致，确认包含新 PNG 资源映射。
+
+正常退出旧应用，备份到 `artifacts/dock-icon/previous-LanChat Lite.app` 后更新本机。
+安装版签名及 Qt 版本核验通过，可执行文件 SHA-256：
+`0c8ac883f459c7c381858175bbf6e03690637d6850741bc40387997a20076f39`。
+原生界面树和窗口截图确认新应用正常启动；未访问或修改配置、聊天记录目录。
+Dock 专用自动截图接口超时，因此未宣称已完成实际 Dock 截图对照；当前视觉问题的
+自动证据是原生图像表示由 16 px 恢复为 256 px。验证与安装记录位于忽略目录
+`artifacts/dock-icon/`。Windows/Intel Mac 和远端 CI 本轮未执行。

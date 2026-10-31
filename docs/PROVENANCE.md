@@ -56,3 +56,17 @@ proxies change and avoids the Qt 6.8.3 SOCKS5 UDP disconnect crash reproduced by
 GPL-3.0-or-later code; no Qt implementation was copied or patched. Socket proxy
 selection follows the Qt 6.8 [QAbstractSocket](https://doc.qt.io/qt-6.8/qabstractsocket.html#setProxy)
 and [QTcpServer](https://doc.qt.io/qt-6.8/qtcpserver.html#setProxy) APIs.
+
+## macOS accessibility runtime (October 2026)
+
+The macOS reference build uses Qt 6.9.3 and requires Qt 6.9.1 or later. This
+includes Qt's [QTBUG-134784 cache ownership fix](https://github.com/qt/qtbase/commit/ae0bd2c52d5e7f112dcace027b4d279b532e1b86),
+which balances references to native accessibility table cells and removes stale
+cached children before their row/column arrays are released. Qt 6.8.3 reproduces
+the `QMacAccessibilityElement dealloc` crash on the tested Mac.
+
+`tests/unit/tst_macosaccessibility.mm` is original GPL-3.0-or-later regression
+code. It queries the shipped Cocoa accessibility bridge in-process and resets
+single-column and two-column contact-style lists. No Qt source is copied or
+patched, and system accessibility settings are not changed. Windows and Linux
+retain their existing Qt reference versions.

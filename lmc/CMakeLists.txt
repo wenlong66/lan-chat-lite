@@ -1,4 +1,7 @@
 find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Network Xml LinguistTools)
+if(APPLE AND Qt6_VERSION VERSION_LESS "6.9.1")
+    message(FATAL_ERROR "macOS requires Qt 6.9.1 or later to avoid QTBUG-134784 accessibility crashes. Use Qt 6.9.3 for the reference build.")
+endif()
 if(UNIX)
     find_package(Qt6 6.2 REQUIRED COMPONENTS Multimedia)
 endif()

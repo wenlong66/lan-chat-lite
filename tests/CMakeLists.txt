@@ -62,3 +62,19 @@ if(MSVC)
     target_compile_options(tst_chatimage PRIVATE /utf-8)
     target_compile_options(tst_attachmentinput PRIVATE /utf-8)
 endif()
+
+if(APPLE)
+    enable_language(OBJCXX)
+    foreach(test_name macosaccessibility macosicon)
+        add_executable(tst_${test_name} unit/tst_${test_name}.mm)
+        target_link_libraries(tst_${test_name} PRIVATE lmc_core Qt6::Test "-framework AppKit")
+        set_target_properties(tst_${test_name} PROPERTIES
+            OBJCXX_STANDARD 17
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
+        add_test(NAME ${test_name} COMMAND tst_${test_name})
+        set_tests_properties(${test_name} PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa"
+            TIMEOUT 90)
+    endforeach()
+    target_sources(tst_macosicon PRIVATE ${CMAKE_SOURCE_DIR}/lmc/src/resource.qrc)
+endif()

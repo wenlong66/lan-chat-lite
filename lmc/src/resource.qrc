@@ -4,6 +4,7 @@
     </qresource>
     <qresource prefix="/icons">
         <file alias="application">resources/lite-icons/application.ico</file>
+        <file alias="application-macos.png">resources/lite-icons/application.png</file>
     </qresource>
     <qresource prefix="/icons/bubbles">
         <file alias="away">resources/lite-icons/away-tray.ico</file>

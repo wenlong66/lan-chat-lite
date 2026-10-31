@@ -24,6 +24,10 @@ ctest --test-dir build --output-on-failure --no-tests=error --timeout 90
 
 关注：零字节文件、恰好一个分块、分块加一字节、多分块、双方完成确认、接收拒绝、慢接收、连接断开、重复传输资源释放、图片粘贴 MIME 数据。测试名称和覆盖率以 `ctest --test-dir build -N` 与实际测试文件为准，不按文档推断已覆盖。
 
+macOS 的 `macosaccessibility` 必须使用原生 Cocoa 平台，不能以 offscreen 结果替代。
+该用例在进程内建立联系人式列表的原生无障碍缓存，再清空模型并释放对象；覆盖单列和
+双列，捕获旧 Qt 的 `QMacAccessibilityElement` 释放崩溃，无需修改系统辅助功能设置。
+
 继承的 `tests/robot` 和 `tools/lmm` 有旧协议 mock。Lite 文件握手变更后，旧 mock 的文件互传用例不能直接当本版验收依据。首版 CI 不运行这套未适配的 mock 文件测试；后续应升级 mock 后再扩展 GUI 全链路覆盖。
 
 ## 3. 实体机基本功能（两个方向都做）

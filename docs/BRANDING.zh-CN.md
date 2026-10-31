@@ -13,6 +13,11 @@ Windows/macOS 共用 Qt Widgets 界面、`lite.qss` 和双气泡图标。背景�
 
 SVG 为本项目原创，PNG/ICO/ICNS 是生成资源，按 GPL-3.0-or-later 许可；旧上游素材与署名保留。普通操作图标使用 64 px PNG，无需增加生产运行时 SVG 依赖。ICO 包含 16、24、32、48、64、128、256 px；ICNS 包含 1×/2×资源，最大 1024 px。
 
+macOS 运行时的 `IDR_APPICON` 使用原始 256×256 `application.png`，应用包继续使用
+`application.icns`。这是为了避免多帧 ICO 经 Cocoa 转换后只给 Dock 留下 16×16 图像，
+导致启动后变模糊。Windows/其他平台继续使用多尺寸 ICO。`macosicon` 原生回归直接
+检查设置应用图标后的 `NSApplication.applicationIconImage`，要求至少保留 256 px。
+
 ## 重新生成
 
 开发工具 `scripts/render-icons.cpp` 依赖 Qt 6 Core/Gui/Svg，在仓库根目录运行。Mac 使用 Qt SDK 的路径设置 `LCHAT_QT`，先创建 `artifacts/branding`，再编译：
